@@ -1,0 +1,22 @@
+# Python Environments
+venv/
+env/
+__pycache__/
+*.py[cod]
+
+# Logs
+logs/
+*.log
+
+# Environment Secrets
+.env
+.env.local
+
+# IDEs and OS files
+.vscode/
+.idea/
+.DS_Store
+
+infra/ 
+secrets/
+*.pem
