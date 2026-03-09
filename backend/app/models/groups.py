@@ -1,0 +1,16 @@
+from sqlalchemy import String, Text, Integer, Numeric
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.models.base import Base, TimestampMixin
+
+class Groups(Base, TimestampMixin):
+    __tablename__ = "groups"
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True, primary_key=True)
+    group_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    groupname: Mapped[str] = mapped_column(Text)
+
+    messages: Mapped[list["RawMessages"]] = relationship("RawMessages", back_populates="group")
+
+    def __repr__(self):
+        return f"<ID: >{self.id}, <Group ID:> {self.group_id}, <Group Name>{self.groupname}"
