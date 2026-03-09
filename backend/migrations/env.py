@@ -6,7 +6,10 @@ from alembic import context
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 from app.models.base import Base 
-from app.models.test_models import TestModel
+from app.models.participants import Participants
+from app.models.groups import Groups 
+from app.models.raw_messages import RawMessages 
+from app.models.transactions import Transactions
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 # this is the Alembic Config object, which provides
