@@ -8,6 +8,7 @@ class Participants(Base, TimestampMixin):
     __tablename__ = "participants"
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True, primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     phone: Mapped[str] = mapped_column(String(32), nullable=False)
     displayname: Mapped[str] = mapped_column(String(64), nullable=False)
     username: Mapped[str] = mapped_column(Text, nullable=True, unique=True)

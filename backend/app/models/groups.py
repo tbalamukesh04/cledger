@@ -7,6 +7,7 @@ class Groups(Base, TimestampMixin):
     __tablename__ = "groups"
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True, primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     group_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     groupname: Mapped[str] = mapped_column(Text)
 

@@ -10,6 +10,7 @@ class RawMessages(Base, TimestampMixin):
     __tablename__ = "raw_messages"
     
     id: Mapped[int] = mapped_column(Integer, autoincrement=True, primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     group_id: Mapped[int] = mapped_column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
     sender_id: Mapped[int] = mapped_column(Integer, ForeignKey("participants.id"), nullable=False, index=True)
     message_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
