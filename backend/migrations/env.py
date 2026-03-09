@@ -10,6 +10,8 @@ from app.models.participants import Participants
 from app.models.groups import Groups 
 from app.models.raw_messages import RawMessages 
 from app.models.transactions import Transactions
+from app.models.audit_logs import AuditLog
+from app.models.bank_account import BankAccount
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 # this is the Alembic Config object, which provides
