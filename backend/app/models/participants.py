@@ -9,7 +9,7 @@ class Participants(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True, primary_key=True)
     tenant_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
-    phone: Mapped[str] = mapped_column(String(32), nullable=False)
+    phone: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
     displayname: Mapped[str] = mapped_column(String(64), nullable=False)
     username: Mapped[str] = mapped_column(Text, nullable=True, unique=True)
     messages: Mapped[list["RawMessages"]] = relationship("RawMessages", back_populates="sender")

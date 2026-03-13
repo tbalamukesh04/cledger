@@ -35,10 +35,6 @@ async def verify_webhook(
 
 @router.post("/webhook", tags=["Webhook"])
 async def receive_webhook(request: Request, db: Session = Depends(get_db)):
-    """
-    Endpoint to receive incoming WhatsApp webhook events.
-    Parses messages and status updates safely, enforcing idempotency.
-    """
     client_ip = request.client.host if request.client else "unknown"
     try:
         raw_body = await request.body()
@@ -89,6 +85,7 @@ async def receive_webhook(request: Request, db: Session = Depends(get_db)):
             for entry in body.get("entry", []):
                 for change in entry.get("changes", []):
                     value = change.get("value", {})
+                    contacts = value.get("contacts", [])
 
                     if "messages" in value:
                         for message in value["messages"]:
@@ -96,14 +93,90 @@ async def receive_webhook(request: Request, db: Session = Depends(get_db)):
                             timestamp_str = message.get("timestamp")
                             dt_received = datetime.fromtimestamp(int(timestamp_str), tz=timezone.utc) if timestamp_str else datetime.now(timezone.utc)
                             
+                            sender_phone = message.get("from")
+                            sender_name = ""
+                            sender_username = None
+
+                            for contact in contacts:
+                                if contact.get("wa_id") == sender_phone:
+                                    sender_name = contact.get("profile", {}).get("name", "")
+                                    sender_username = contact.get("profile", {}).get("username", None)
+                                    break
+
+                            group_id_str = message.get("context", {}).get("from", sender_phone)
+
+                            msg_type = message.get("type")
+                            media_id = None
                             raw_text = None
-                            if message.get("type") == "text":
+
+                            if msg_type == "text":
                                 raw_text = message.get("text", {}).get("body")
+                            elif msg_type in ["image", "video", "audio", "file"]:
+                                media_id = message.get(msg_type, {}).get("id")
+                            
+                            logger.info(
+                                f"Extracted Payload - Phone: {sender_phone}, Name: {sender_name}, Group ID: {group_id_str}, Type: {msg_type}, Media ID: {media_id}, Text: {raw_text}"
+                            )
+                            participant = db.query(Participants).filter(Participants.phone == sender_phone).first()
+
+                            if participant:
+                                sender_db_id = participant.id
+                            else:
+                                try:
+                                    new_participant = Participants(
+                                        tenant_id=1,
+                                        phone=sender_phone,
+                                        displayname=sender_name,
+                                        username=sender_username
+                                    )
+                                    db.add(new_participant)
+                                    db.flush()
+                                    sender_db_id = new_participant.id
+                                    logger.debug(f"Created New participant: {sender_phone} ID {sender_db_id}")
+                                except IntegrityError as e:
+                                    db.rollback()
+                                    logger.warning(json.dumps({
+                                        "event_type": "security_alert",
+                                        "reason": "duplicate_user",
+                                        "source_ip": client_ip,
+                                        "timestamp": datetime.now(timezone.utc).isoformat()
+                                    }))
+                                    participant = db.query(Participants).filter(Participants.phone == sender_phone).first()
+                                    sender_db_id = participant.id                            
+                            
+                            group = db.query(Groups).filter(Groups.group_id == group_id_str).first()
+                            
+                            if group:
+                                group_db_id = group.id
+                            else:
+                                try:
+                                    is_direct_message = (group_id_str == sender_phone)
+                                    default_group_name = "Direct Message" if is_direct_message else "Unknown Group"
+                                    new_group = Groups(
+                                        tenant_id=1,
+                                        group_id=group_id_str,
+                                        groupname=default_group_name
+                                        
+                                    )
+                                    db.add(new_group)
+                                    db.flush()
+                                    group_db_id = new_group.id
+                                    logger.debug(f"Created New Group: {group_id_str} ID {group_db_id}")
+                                except IntegrityError as e:
+                                    db.rollback()
+                                    logger.warning(json.dumps({
+                                        "event_type": "security_alert",
+                                        "reason": "duplicate_group",
+                                        "source_ip": client_ip,
+                                        "timestamp": datetime.now(timezone.utc).isoformat()
+                                    }))
+                                    group = db.query(Groups).filter(Groups.group_id == group_id_str).first()
+                                    group_db_id = group.id
 
                             new_message = RawMessages(
                                 tenant_id=1, 
-                                group_id=1, 
-                                sender_id=1, 
+                                group_id=group_db_id, 
+                                sender_id=sender_db_id, 
                                 message_id=msg_id,           
                                 received_at=dt_received,
                                 raw_json=body,
@@ -114,12 +187,22 @@ async def receive_webhook(request: Request, db: Session = Depends(get_db)):
                             
                             try:
                                 db.commit()
-                                logger.info(f"✅ Successfully inserted new raw message: {idem_key}")
+
+                                success_log = {
+                                    "event_type": "webhook_ingestion_success",
+                                    "message_id": msg_id,
+                                    "participant_id": sender_db_id,
+                                    "group_id": group_db_id,
+                                    "insertion_timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "Processed": False
+                                }
+                                logger.info(json.dumps(success_log))
                             except IntegrityError as e:
                                 db.rollback()
                                 logger.warning(json.dumps({
                                     "event_type": "security_alert",
                                     "reason": "duplicate_webhook",
+                                    "hash": idem_key,
                                     "source_ip": client_ip,
                                     "timestamp": datetime.now(timezone.utc).isoformat()
                                 }))
