@@ -11,7 +11,7 @@ db_url = os.getenv("DATABASE_URL")
 if not db_url:
     raise ValueError("DATABASE_URL environment variable not set")
     
-engine = create_engine(db_url, echo=True)
+engine = create_engine(db_url, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

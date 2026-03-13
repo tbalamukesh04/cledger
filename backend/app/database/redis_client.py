@@ -3,13 +3,13 @@ import logging
 from dotenv import load_dotenv
 import redis
 
-# Load environment variables
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Fetch the Redis URL from the environment
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+WEBHOOK_QUEUE_NAME = "cledger:webhook_processing_queue"
 
 def get_redis_client() -> redis.Redis:
     """
@@ -23,7 +23,6 @@ def get_redis_client() -> redis.Redis:
         logger.error(f"Failed to initialize Redis client: {e}")
         raise e
 
-# Create a globally available, reusable connection instance
 redis_client = get_redis_client()
 
 def verify_redis_connection():

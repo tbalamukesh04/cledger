@@ -1,16 +1,20 @@
 import os
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from fastapi.responses import PlainTextResponse
 from fastapi import APIRouter, Request, HTTPException, Query, Response, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from redis import Redis
 
+from app.api.dependencies import get_db, get_redis
+from app.database.redis_client import WEBHOOK_QUEUE_NAME
+from app.schemas.jobs import WebhookJobPayload
 from app.utils.security import verify_whatsapp_signature
 from app.utils.idempotency import generate_idempotency_key
 from app.api.dependencies import get_db
-
 from app.models.raw_messages import RawMessages
 from app.models.participants import Participants
 from app.models.groups import Groups
@@ -34,7 +38,12 @@ async def verify_webhook(
     raise HTTPException(status_code=400, detail="Invalid Request")
 
 @router.post("/webhook", tags=["Webhook"])
-async def receive_webhook(request: Request, db: Session = Depends(get_db)):
+async def receive_webhook(
+    request: Request, 
+    db: Session = Depends(get_db),
+    redis_client: Redis = Depends(get_redis)
+):
+    start_time = time.perf_counter()
     client_ip = request.client.host if request.client else "unknown"
     try:
         raw_body = await request.body()
@@ -73,6 +82,7 @@ async def receive_webhook(request: Request, db: Session = Depends(get_db)):
 
         existing_msg = db.query(RawMessages).filter(RawMessages.hash == idem_key).first()
         if existing_msg:
+            process_time_ms = (time.perf_counter() - start_time) * 1000
             logger.warning(json.dumps({
                 "event_type": "security_alert",
                 "reason": "duplicate_webhook",
@@ -187,29 +197,70 @@ async def receive_webhook(request: Request, db: Session = Depends(get_db)):
                             
                             try:
                                 db.commit()
+                                
+                                # --- Step 3: Job Serialization Logic ---
+                                job_payload = WebhookJobPayload(
+                                    raw_message_id=new_message.id,
+                                    participant_id=sender_db_id,
+                                    group_id=group_db_id,
+                                    message_timestamp=dt_received,
+                                    webhook_event_type=msg_type,
+                                    ingestion_time=datetime.now(timezone.utc)
+                                )
+                                # ... [Previous Serialization Logic] ...
+                                serialized_job = job_payload.to_json()
+                                
+                                try:
+                                    redis_client.lpush(WEBHOOK_QUEUE_NAME, serialized_job)
+                                    
+                                    # --- NEW: Step 7 Queue Monitoring Log ---
+                                    logger.info(json.dumps({
+                                        "event_type": "queue_enqueue_success",
+                                        "job_id": job_payload.job_id,
+                                        "raw_message_id": job_payload.raw_message_id,
+                                        "queue_name": WEBHOOK_QUEUE_NAME,
+                                        "enqueue_timestamp": datetime.now(timezone.utc).isoformat()
+                                    }))
+                                    # ----------------------------------------
+                                    
+                                except Exception as e:
+                                    # Update error log to be structured as well
+                                    logger.error(json.dumps({
+                                        "event_type": "queue_enqueue_failed",
+                                        "raw_message_id": new_message.id,
+                                        "queue_name": WEBHOOK_QUEUE_NAME,
+                                        "error": str(e),
+                                        "timestamp": datetime.now(timezone.utc).isoformat()
+                                    }), exc_info=True)
 
-                                success_log = {
+                                # Calculate Latency for the primary success path
+                                process_time_ms = (time.perf_counter() - start_time) * 1000
+                                # ... [Keep existing webhook_ingestion_success log] ...
+                                logger.info(json.dumps({
                                     "event_type": "webhook_ingestion_success",
                                     "message_id": msg_id,
                                     "participant_id": sender_db_id,
                                     "group_id": group_db_id,
-                                    "insertion_timestamp": datetime.now(timezone.utc).isoformat(),
-                                    "Processed": False
-                                }
-                                logger.info(json.dumps(success_log))
+                                    "enqueued_to_redis": True,
+                                    "latency_ms": round(process_time_ms, 2), # <-- Log latency here
+                                    "insertion_timestamp": datetime.now(timezone.utc).isoformat()
+                                }))
+                                
                             except IntegrityError as e:
                                 db.rollback()
+                                # --- Latency Log (DB Duplicate Path) ---
+                                process_time_ms = (time.perf_counter() - start_time) * 1000
                                 logger.warning(json.dumps({
                                     "event_type": "security_alert",
-                                    "reason": "duplicate_webhook",
+                                    "reason": "duplicate_webhook_db_catch",
                                     "hash": idem_key,
-                                    "source_ip": client_ip,
-                                    "timestamp": datetime.now(timezone.utc).isoformat()
+                                    "latency_ms": round(process_time_ms, 2)
                                 }))
                                 return Response(content="DUPLICATE_IGNORED_BY_DB", status_code=200)
 
+            # Final return for standard successful processing
             return Response(content="EVENT_RECEIVED", status_code=200)
-        
+            
         else:
             return Response(content="Not a WhatsApp event", status_code=404)
 
