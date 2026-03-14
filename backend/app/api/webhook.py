@@ -101,8 +101,14 @@ async def receive_webhook(
                         for message in value["messages"]:
                             msg_id = message.get("id", idem_key)
                             timestamp_str = message.get("timestamp")
-                            dt_received = datetime.fromtimestamp(int(timestamp_str), tz=timezone.utc) if timestamp_str else datetime.now(timezone.utc)
-                            
+                            dt_received = datetime.now(timezone.utc) # Default fallback
+
+                            if timestamp_str:
+                                try:
+                                    dt_received = datetime.fromtimestamp(int(timestamp_str), tz=timezone.utc)
+                                except (ValueError, TypeError):
+                                    # If Meta sends garbage, just use the current server time so ingestion succeeds
+                                    logger.warning(f"Invalid timestamp format received from Meta: '{timestamp_str}'. Falling back to current time.")
                             sender_phone = message.get("from")
                             sender_name = ""
                             sender_username = None
