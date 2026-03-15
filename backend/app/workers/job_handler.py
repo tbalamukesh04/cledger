@@ -1,8 +1,10 @@
 import logging
+import hashlib
 import json
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import joinedload
+from sqlalchemy.exc import IntegrityError
 
 from app.schemas.jobs import WebhookJobPayload
 from app.schemas.preprocessing import PreprocessedPayload
@@ -12,6 +14,7 @@ from app.models.groups import Groups
 from app.models.participants import Participants
 from app.utils.text_processing import normalize_whatsapp_text
 from app.utils.datetime_utils import convert_epoch_to_utc_datetime
+from app.utils.hashing import generate_content_hash
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +61,6 @@ def _extract_message_timestamp(raw_json: dict) -> str | None:
         if not messages: return None
         
         msg = messages[0]
-        # The timestamp is typically a string representing Unix epoch time
         return msg.get("timestamp")
         
     except (IndexError, AttributeError, TypeError) as e:
@@ -75,6 +77,10 @@ def _parse_epoch_to_int(epoch_str: str | None) -> int | None:
     except (ValueError, TypeError) as e:
         logger.warning(f"Failed to parse epoch timestamp '{epoch_str}'")
         return None
+
+def _generate_content_hash(text: str | None, timestamp: datetime) -> str:
+    base_string = f"{text or ''}|{timestamp.isoformat()}"
+    return hashlib.sha256(base_string.encode('utf-8')).hexdigest()
 
 def process_webhook_job(job: WebhookJobPayload) -> bool:
     """
@@ -111,23 +117,97 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
             }))
             return False
 
-        # Text Extraction & Normalization
         raw_text = _extract_message_text(raw_msg.raw_json)
         normalized_text = normalize_whatsapp_text(raw_text)
         
-        # Timestamp Extraction & Normalization
         raw_epoch_str = _extract_message_timestamp(raw_msg.raw_json)
         parsed_epoch_int = _parse_epoch_to_int(raw_epoch_str)
         normalized_timestamp = convert_epoch_to_utc_datetime(parsed_epoch_int)
         final_message_timestamp = normalized_timestamp or raw_msg.received_at or job.message_timestamp
         
-        # Sender & Group Metadata Extraction
+        content_hash = generate_content_hash(normalized_text, final_message_timestamp)
+
+        is_native_wamid = raw_msg.message_id and raw_msg.message_id.startswith("wamid.")
+
+        if is_native_wamid:
+            idempotency_key = raw_msg.message_id
+            idempotency_source = "whatsapp_message_id"
+
+        else:
+            idempotency_key = f"idem_content_{content_hash}"
+            idempotency_source = "content_hash"
+
+        logger.info(json.dumps({
+            "event_type": "idempotency_identifier_selected",
+            "job_id": job.job_id,
+            "raw_message_id": raw_msg.id,
+            "whatsapp_message_id": raw_msg.message_id,
+            "message_hash": content_hash,
+            "idempotency_key": idempotency_key,
+            "idempotency_source": idempotency_source,
+            "message": "Hash generated and idempotency identifier selected."
+        }))
+
+        duplicate_record = None
+        
+        if raw_msg.processed:
+            duplicate_record = raw_msg
+        
+        else:
+            if is_native_wamid:
+                duplicate_record = db.query(RawMessages).filter(
+                    RawMessages.message_id == idempotency_key,
+                    RawMessages.id != raw_msg.id,
+                    RawMessages.processed == True
+                ).first()
+
+            if not duplicate_record:
+                duplicate_record = db.query(RawMessages).filter(
+                    RawMessages.hash == idempotency_key,
+                    RawMessages.id != raw_msg.id,
+                    RawMessages.processed == True
+                ).first()
+
+            if duplicate_record:
+                logger.warning(json.dumps({
+                "event_type": "duplicate_detected",
+                "job_id": job.job_id,
+                "raw_message_id": raw_msg.id,
+                "whatsapp_message_id": raw_msg.message_id,
+                "message_hash": content_hash,
+                "duplicate_status": "aborted",
+                "duplicate_of_id": duplicate_record.id,
+                "idempotency_key": idempotency_key,
+                "reason": "already_processed" if raw_msg.processed else "redundant_delivery",
+                "message": "Duplicate detected. Aborting pipeline safely."
+                }))
+
+                return True
+
+        if raw_msg.hash != idempotency_key:
+            try:
+                raw_msg.hash = idempotency_key
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                logger.warning(json.dumps({
+                    "event_type": "duplicate_detected",
+                    "job_id": job.job_id,
+                    "raw_message_id": raw_msg.id,
+                    "whatsapp_message_id": raw_msg.message_id,
+                    "message_hash": content_hash,
+                    "duplicate_status": "concurrent_abort",
+                    "idempotency_key": idempotency_key,
+                    "reason": "concurrent_hash_collision",
+                    "message": "Race condition caught. Duplicate hash insertion prevented."
+                }))
+                return True
+
         sender_phone = raw_msg.sender.phone if raw_msg.sender else None
         sender_name = raw_msg.sender.displayname if raw_msg.sender else None
         group_whatsapp_id = raw_msg.group.group_id if raw_msg.group else None
         group_name = raw_msg.group.groupname if raw_msg.group else None
         
-        # Step 7: Construct the extended processing context
         preprocessed_data = PreprocessedPayload(
             raw_message_id=raw_msg.id,
             participant_id=raw_msg.sender_id,
@@ -136,22 +216,23 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
             group_id=raw_msg.group_id,
             group_whatsapp_id=group_whatsapp_id,
             group_name=group_name,
-            normalized_timestamp=final_message_timestamp, # <-- Updated field mapping
+            normalized_timestamp=final_message_timestamp, 
             message_id=raw_msg.message_id,
             message_type=job.webhook_event_type,
-            normalized_text=normalized_text
+            normalized_text=normalized_text,
+            message_hash = content_hash,
+            idempotency_identifier = idempotency_key
         )
 
-        # Step 8: Structured Logging for Metadata Extraction
         logger.info(json.dumps({
             "event_type": "metadata_extraction_complete",
             "extraction_status": "success",
             "job_id": job.job_id,
             "raw_message_id": preprocessed_data.raw_message_id,
-            "normalized_timestamp": preprocessed_data.normalized_timestamp.isoformat(), # explicitly logged
-            "participant_id": preprocessed_data.participant_id,
-            "group_id": preprocessed_data.group_id,
-            "timestamp_source": "meta_payload" if normalized_timestamp else "fallback_db"
+            "idempotency_key": preprocessed_data.idempotency_identifier,
+            "message_hash": preprocessed_data.message_hash,
+            "duplicate_status": "clear", 
+            "idempotency_source": idempotency_source
         }))
 
         return True
