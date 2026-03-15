@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 import os
 
 from sqlalchemy.orm import joinedload
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError, DBAPIError
+import redis.exceptions
 
 from app.schemas.jobs import WebhookJobPayload
 from app.schemas.preprocessing import PreprocessedPayload
@@ -20,6 +21,15 @@ from app.utils.hashing import generate_content_hash
 logger = logging.getLogger(__name__)
 
 WORKER_IDENTIFIER = os.getenv("WORKER_IDENTIFIER", f"worker-{os.getpid()}")
+
+RETRYABLE_EXCEPTIONS = (
+    OperationalError,
+    DBAPIError,
+    redis.exceptions.ConnectionError,
+    redis.exceptions.TimeoutError,
+    ConnectionError,
+    TimeoutError
+)
 
 def _extract_message_text(raw_json: dict) -> str|None:
     try:
@@ -279,7 +289,7 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
             return True
 
         db.commit()
-        
+
         logger.info(json.dumps({
             "event_type": "job_processing_completed",
             "job_id": job.job_id,
@@ -290,10 +300,21 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
             "timestamp": processing_completed_at.isoformat(),
             "message": "Job successfully processed and database state updated."
         }))
-        # ---------------------------------------------
 
         return True
-    
+
+    except RETRYABLE_EXCEPTIONS as e:
+        db.rollback()
+        logger.warning(json.dumps({
+            "event_type": "job_transient_failure",
+            "job_id": job.job_id,
+            "raw_message_id": job.raw_message_id,
+            "error": str(e),
+            "message": "Transient error encountered. Bubbling up to retry handler."
+        }))
+        raise  # Let the worker service catch this to trigger a retry!
+
+
     except Exception as e:
         db.rollback()
         processing_outcome = "failure"

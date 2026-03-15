@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 WEBHOOK_QUEUE_NAME = "cledger:webhook_processing_queue"
+WEBHOOK_ACTIVE_QUEUE = "cledger:webhook_active_queue"
+WEBHOOK_DLQ_NAME = "cledger:webhook_dead_letter_queue"
 
 def get_redis_client() -> redis.Redis:
     """
