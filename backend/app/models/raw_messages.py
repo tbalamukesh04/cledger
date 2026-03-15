@@ -21,6 +21,10 @@ class RawMessages(Base, TimestampMixin):
     is_transaction: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     hash: Mapped[str] = mapped_column(String(256), unique=True, nullable=False)
 
+    processing_status: Mapped[str] = mapped_column(String(50), default = "pending", server_default = "pending", nullable=False)
+    processing_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    processing_completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    
     sender: Mapped[Optional["Participants"]] = relationship("Participants", back_populates="messages")
     group: Mapped[Optional["Groups"]] = relationship("Groups", back_populates="messages")
 

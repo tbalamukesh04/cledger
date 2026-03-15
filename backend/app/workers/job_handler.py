@@ -2,6 +2,7 @@ import logging
 import hashlib
 import json
 from datetime import datetime, timezone
+import os
 
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import IntegrityError
@@ -17,6 +18,8 @@ from app.utils.datetime_utils import convert_epoch_to_utc_datetime
 from app.utils.hashing import generate_content_hash
 
 logger = logging.getLogger(__name__)
+
+WORKER_IDENTIFIER = os.getenv("WORKER_IDENTIFIER", f"worker-{os.getpid()}")
 
 def _extract_message_text(raw_json: dict) -> str|None:
     try:
@@ -93,13 +96,16 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
         bool: True if processed successfully, False otherwise.
     """
     db = SessionLocal()
+
+    processing_started_at = datetime.now(timezone.utc)
+    processing_outcome = "unknown"
     
     try:
         logger.info(json.dumps({
             "event_type": "job_processing_started", 
             "job_id": job.job_id,
             "raw_message_id": job.raw_message_id,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": processing_started_at.isoformat()
         }))
 
         raw_msg = db.query(RawMessages).options(
@@ -108,12 +114,20 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
         ).filter(RawMessages.id == job.raw_message_id).first()
         
         if not raw_msg:
+            processing_outcome = "failure"
+            processing_completed_at = datetime.now(timezone.utc)
+            processing_duration_ms = round((processing_completed_at - processing_started_at).total_seconds() * 1000, 2)
+            
             logger.error(json.dumps({
                 "event_type": "job_processing_error",
                 "extraction_status": "failed",
                 "reason": "RawMessage record not found in database",
                 "job_id": job.job_id,
-                "raw_message_id": job.raw_message_id
+                "raw_message_id": job.raw_message_id,
+                "processing_outcome": processing_outcome,
+                "processing_duration_ms": processing_duration_ms,
+                "worker_identifier": WORKER_IDENTIFIER,
+                "timestamp": processing_completed_at.isoformat()
             }))
             return False
 
@@ -137,17 +151,6 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
             idempotency_key = f"idem_content_{content_hash}"
             idempotency_source = "content_hash"
 
-        logger.info(json.dumps({
-            "event_type": "idempotency_identifier_selected",
-            "job_id": job.job_id,
-            "raw_message_id": raw_msg.id,
-            "whatsapp_message_id": raw_msg.message_id,
-            "message_hash": content_hash,
-            "idempotency_key": idempotency_key,
-            "idempotency_source": idempotency_source,
-            "message": "Hash generated and idempotency identifier selected."
-        }))
-
         duplicate_record = None
         
         if raw_msg.processed:
@@ -168,8 +171,12 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
                     RawMessages.processed == True
                 ).first()
 
-            if duplicate_record:
-                logger.warning(json.dumps({
+        if duplicate_record:
+            processing_outcome = "duplicate_detected"
+            processing_completed_at = datetime.now(timezone.utc)
+            processing_duration_ms = round((processing_completed_at - processing_started_at).total_seconds() * 1000, 2)
+            
+            logger.warning(json.dumps({
                 "event_type": "duplicate_detected",
                 "job_id": job.job_id,
                 "raw_message_id": raw_msg.id,
@@ -179,10 +186,13 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
                 "duplicate_of_id": duplicate_record.id,
                 "idempotency_key": idempotency_key,
                 "reason": "already_processed" if raw_msg.processed else "redundant_delivery",
+                "processing_outcome": processing_outcome,
+                "processing_duration_ms": processing_duration_ms, 
+                "worker_identifier": WORKER_IDENTIFIER,            
+                "timestamp": processing_completed_at.isoformat(),
                 "message": "Duplicate detected. Aborting pipeline safely."
-                }))
-
-                return True
+            }))
+            return True
 
         if raw_msg.hash != idempotency_key:
             try:
@@ -190,6 +200,10 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
                 db.commit()
             except IntegrityError:
                 db.rollback()
+                processing_outcome = "duplicate_detected"
+                processing_completed_at = datetime.now(timezone.utc)
+                processing_duration_ms = round((processing_completed_at - processing_started_at).total_seconds() * 1000, 2)
+                
                 logger.warning(json.dumps({
                     "event_type": "duplicate_detected",
                     "job_id": job.job_id,
@@ -199,6 +213,10 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
                     "duplicate_status": "concurrent_abort",
                     "idempotency_key": idempotency_key,
                     "reason": "concurrent_hash_collision",
+                    "processing_outcome": processing_outcome,
+                    "processing_duration_ms": processing_duration_ms, # <-- Added duration
+                    "worker_identifier": WORKER_IDENTIFIER,           # <-- Added worker ID
+                    "timestamp": processing_completed_at.isoformat(),
                     "message": "Race condition caught. Duplicate hash insertion prevented."
                 }))
                 return True
@@ -224,27 +242,88 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
             idempotency_identifier = idempotency_key
         )
 
+        processing_outcome = "success"
+         
+        processing_completed_at = datetime.now(timezone.utc)
+        processing_duration_ms = round((processing_completed_at - processing_started_at).total_seconds() * 1000, 2)
+      
+        
+        updated_rows = db.query(RawMessages).filter(
+            RawMessages.id == raw_msg.id,
+            RawMessages.processed == False
+        ).update({
+            RawMessages.processed: True,
+            RawMessages.processing_status: processing_outcome,
+            RawMessages.processing_started_at: processing_started_at,
+            RawMessages.processing_completed_at: processing_completed_at # <-- Stored exactly
+        }, synchronize_session=False)
+        
+        if updated_rows == 0:
+            db.rollback()
+            processing_outcome = "duplicate_detected"
+            processing_completed_at = datetime.now(timezone.utc)
+            processing_duration_ms = round((processing_completed_at - processing_started_at).total_seconds() * 1000, 2)
+            
+            logger.warning(json.dumps({
+                "event_type": "duplicate_detected",
+                "job_id": job.job_id,
+                "raw_message_id": raw_msg.id,
+                "duplicate_status": "late_stage_concurrent_abort",
+                "reason": "already_processed_during_execution",
+                "processing_outcome": processing_outcome,
+                "processing_duration_ms": processing_duration_ms,  
+                "worker_identifier": WORKER_IDENTIFIER,            
+                "timestamp": processing_completed_at.isoformat(),
+                "message": "Message was completed by another worker during execution. Update aborted."
+            }))
+            return True
+
+        db.commit()
+        
         logger.info(json.dumps({
-            "event_type": "metadata_extraction_complete",
-            "extraction_status": "success",
+            "event_type": "job_processing_completed",
             "job_id": job.job_id,
-            "raw_message_id": preprocessed_data.raw_message_id,
-            "idempotency_key": preprocessed_data.idempotency_identifier,
-            "message_hash": preprocessed_data.message_hash,
-            "duplicate_status": "clear", 
-            "idempotency_source": idempotency_source
+            "raw_message_id": raw_msg.id,
+            "processing_outcome": processing_outcome,
+            "processing_duration_ms": processing_duration_ms,
+            "worker_identifier": WORKER_IDENTIFIER,
+            "timestamp": processing_completed_at.isoformat(),
+            "message": "Job successfully processed and database state updated."
         }))
+        # ---------------------------------------------
 
         return True
     
     except Exception as e:
+        db.rollback()
+        processing_outcome = "failure"
+        
+        # --- Calculate duration on failure ---
+        processing_completed_at = datetime.now(timezone.utc)
+        processing_duration_ms = round((processing_completed_at - processing_started_at).total_seconds() * 1000, 2)
+        # -------------------------------------
+        
+        try:
+            db.query(RawMessages).filter(RawMessages.id == job.raw_message_id).update({
+                RawMessages.processing_status: processing_outcome,
+                RawMessages.processing_started_at: processing_started_at,
+                RawMessages.processing_completed_at: processing_completed_at
+            }, synchronize_session=False)
+            db.commit()
+        except Exception as inner_e:
+            db.rollback()
+            logger.error(f"Failed to save failure state to DB: {inner_e}")
+        
         logger.error(json.dumps({
             "event_type": "job_processing_failed",
             "extraction_status": "error",
             "job_id": job.job_id,
             "raw_message_id": job.raw_message_id,
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "processing_outcome": processing_outcome,
+            "processing_duration_ms": processing_duration_ms, # <-- Added duration
+            "worker_identifier": WORKER_IDENTIFIER,           # <-- Added worker ID
+            "timestamp": processing_completed_at.isoformat()
         }), exc_info=True)
         return False
         

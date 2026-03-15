@@ -36,8 +36,18 @@ def trigger_webhook(payload: dict) -> bool:
         'x-hub-signature-256': generate_signature(payload_bytes, APP_SECRET)
     }
     response = requests.post(WEBHOOK_URL, data=payload_bytes, headers=headers)
-    return response.status_code == 200
-
+    
+    # 1. Check for standard HTTP errors (like 403 Invalid Signature)
+    if response.status_code != 200:
+        print(f"❌ WEBHOOK REJECTED! Status: {response.status_code}, Body: {response.text}")
+        return False
+        
+    # 2. NEW: Check for the silent internal FastAPI error!
+    if "Error processing event" in response.text:
+        print(f"❌ FASTAPI CRASHED INTERNALLY! (Check your uvicorn terminal for the exact SQL/Python error).")
+        return False
+        
+    return True
 def get_job_from_queue() -> WebhookJobPayload | None:
     time.sleep(0.5) 
     result = redis_client.brpop(WEBHOOK_QUEUE_NAME, timeout=5)
@@ -81,8 +91,13 @@ def run_idempotency_tests():
     payload_1 = create_payload(test_phone, wamid, "Test WAMID Dup", fixed_time)
 
     print("-> Sending Initial Webhook...")
-    trigger_webhook(payload_1)
+    success = trigger_webhook(payload_1)
+    assert success is True, "FastAPI rejected the initial webhook!"
+    
     job_1a = get_job_from_queue()
+    assert job_1a is not None, "Failed to retrieve job from Redis!"
+    
+    print("-> Processing Initial Job (Should Succeed)...")
     process_webhook_job(job_1a)
     
     db = SessionLocal()
@@ -104,8 +119,13 @@ def run_idempotency_tests():
     payload_2 = create_payload(test_phone, None, "Test Hash Dup", fixed_time)
 
     print("-> Sending Initial Webhook...")
-    trigger_webhook(payload_2)
+    success = trigger_webhook(payload_2)
+    assert success is True, "FastAPI rejected the webhook!"
+    
     job_2a = get_job_from_queue()
+    assert job_2a is not None, "Failed to retrieve job from Redis!"
+    
+    print("-> Processing Initial Job (Should Succeed)...")
     process_webhook_job(job_2a)
     
     db = SessionLocal()
@@ -115,7 +135,6 @@ def run_idempotency_tests():
 
     print("\n-> Sending DUPLICATE Webhook (Bypassing Router with altered profile name)...")
     payload_2b = create_payload(test_phone, None, "Test Hash Dup", fixed_time)
-    # Change a dummy field so the router's raw JSON hash changes, but text/time stay identical
     payload_2b["entry"][0]["changes"][0]["value"]["contacts"][0]["profile"]["name"] = "Sneaky Duplicate"
     
     trigger_webhook(payload_2b)
@@ -135,8 +154,11 @@ def run_idempotency_tests():
     payload_3 = create_payload(test_phone, wamid_3, "Test Retry", fixed_time)
 
     print("-> Sending Webhook...")
-    trigger_webhook(payload_3)
+    success = trigger_webhook(payload_3)
+    assert success is True, "FastAPI rejected the webhook!"
+    
     job_3 = get_job_from_queue()
+    assert job_3 is not None, "Failed to retrieve job from Redis!"
     
     print("-> Simulating that this job was ALREADY processed in the database...")
     db = SessionLocal()
