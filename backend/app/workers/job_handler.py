@@ -19,6 +19,7 @@ from app.utils.datetime_utils import convert_epoch_to_utc_datetime
 from app.utils.hashing import generate_content_hash
 from app.ai.ai_parser import AIParser
 from app.models.transactions import Transactions
+from app.utils.financial_validation import validate_and_convert_amount, normalize_currency_code
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +61,6 @@ def _extract_message_text(raw_json: dict) -> str|None:
         return None
         
 def _extract_message_timestamp(raw_json: dict) -> str | None:
-    """
-    Safely navigates the nested Meta webhook payload to extract the exact message timestamp.
-    Returns the Unix epoch timestamp as a string, or None if not found.
-    """
     try:
         entries = raw_json.get("entry", [])
         if not entries: return None
@@ -85,10 +82,8 @@ def _extract_message_timestamp(raw_json: dict) -> str | None:
 def _parse_epoch_to_int(epoch_str: str | None) -> int | None:
     if not epoch_str:
         return None
-
     try:
         return int(epoch_str)
-
     except (ValueError, TypeError) as e:
         logger.warning(f"Failed to parse epoch timestamp '{epoch_str}'")
         return None
@@ -98,15 +93,6 @@ def _generate_content_hash(text: str | None, timestamp: datetime) -> str:
     return hashlib.sha256(base_string.encode('utf-8')).hexdigest()
 
 def process_webhook_job(job: WebhookJobPayload) -> bool:
-    """
-    Core handler for processing webhook jobs dequeued from Redis.
-    
-    Args:
-        job (WebhookJobPayload): The validated job payload.
-        
-    Returns:
-        bool: True if processed successfully, False otherwise.
-    """
     db = SessionLocal()
 
     processing_started_at = datetime.now(timezone.utc)
@@ -158,7 +144,6 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
         if is_native_wamid:
             idempotency_key = raw_msg.message_id
             idempotency_source = "whatsapp_message_id"
-
         else:
             idempotency_key = f"idem_content_{content_hash}"
             idempotency_source = "content_hash"
@@ -167,7 +152,6 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
         
         if raw_msg.processed:
             duplicate_record = raw_msg
-        
         else:
             if is_native_wamid:
                 duplicate_record = db.query(RawMessages).filter(
@@ -226,8 +210,8 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
                     "idempotency_key": idempotency_key,
                     "reason": "concurrent_hash_collision",
                     "processing_outcome": processing_outcome,
-                    "processing_duration_ms": processing_duration_ms, # <-- Added duration
-                    "worker_identifier": WORKER_IDENTIFIER,           # <-- Added worker ID
+                    "processing_duration_ms": processing_duration_ms,
+                    "worker_identifier": WORKER_IDENTIFIER,
                     "timestamp": processing_completed_at.isoformat(),
                     "message": "Race condition caught. Duplicate hash insertion prevented."
                 }))
@@ -254,12 +238,99 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
             idempotency_identifier = idempotency_key
         )
 
+        # ---------------------------------------------------------
+        # --- PIPELINE STAGE 2: AI Extraction ---
+        # ---------------------------------------------------------
+        parser = AIParser()
+        extraction_result = parser.parse_single(
+            text=normalized_text,
+            timestamp=final_message_timestamp.isoformat()
+        )
+
+        # ---------------------------------------------------------
+        # --- PIPELINE STAGE 3: Numeric Validation & Context ---
+        # ---------------------------------------------------------
+        validated_amount = None
+        normalized_currency = "ZMW"
+        confidence_score = 0.0
+        txn_verb = None
+
+        if extraction_result:
+            validated_amount = validate_and_convert_amount(extraction_result.amount)
+            normalized_currency = normalize_currency_code(extraction_result.currency)
+            confidence_score = extraction_result.confidence
+            txn_verb = extraction_result.transaction_verb
+
+        worker_context = {
+            "job_id": job.job_id,
+            "preprocessed_data": preprocessed_data,
+            "extracted_amount": validated_amount,
+            "extracted_currency": normalized_currency,
+            "extraction_confidence": confidence_score,
+            "transaction_verb": txn_verb,
+            "classification_status": "PENDING"
+        }
+
+        extraction_status = "SUCCESS" if validated_amount is not None else "FAILED_OR_NON_TRANSACTION"
+        
+        logger.info(json.dumps({
+            "event_type": "monetary_extraction_completed",
+            "job_id": job.job_id,
+            "raw_message_id": raw_msg.id,
+            "extracted_amount": float(validated_amount) if validated_amount is not None else None,
+            "extracted_currency": normalized_currency,
+            "extraction_confidence": confidence_score,
+            "extraction_status": extraction_status
+        }))
+
+        # ---------------------------------------------------------
+        # --- PIPELINE STAGE 4: Database Storage ---
+        # ---------------------------------------------------------
+        # Only proceed if we have a valid amount and a clear credit/debit verb
+        if worker_context["extracted_amount"] is not None and worker_context["transaction_verb"] in ['credit', 'debit']:
+            
+            txn_date = final_message_timestamp
+            if extraction_result and extraction_result.date:
+                try:
+                    txn_date = datetime.strptime(extraction_result.date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                except ValueError:
+                    logger.warning(f"Could not parse LLM date output: {extraction_result.date}")
+    
+            new_transaction = Transactions(
+                tenant_id = raw_msg.tenant_id,
+                raw_message_id = raw_msg.id,
+                amount=worker_context["extracted_amount"],  
+                currency=worker_context["extracted_currency"],
+                txn_type=worker_context["transaction_verb"],
+                txn_date=txn_date,
+                confidence=worker_context["extraction_confidence"],
+                status="PARSED", 
+                hash=content_hash,
+                parsing_meta={
+                    "source": "gemini-2.5-flash",
+                    "raw_ai_output": extraction_result.model_dump() if extraction_result else None
+                }
+            )
+            db.add(new_transaction)
+
+            worker_context['classification_status'] = "PARSED"
+
+            logger.info(json.dumps({
+                "event_type": "transaction_extracted",
+                "job_id": job.job_id,
+                "amount": float(new_transaction.amount),  
+                "currency": new_transaction.currency,
+                "txn_type": new_transaction.txn_type,
+                "confidence": new_transaction.confidence
+            }))
+
+        # ---------------------------------------------------------
+        # --- FINALIZE TIMESTAMPS & UPDATE RAW MESSAGE ---
+        # ---------------------------------------------------------
         processing_outcome = "success"
-         
         processing_completed_at = datetime.now(timezone.utc)
         processing_duration_ms = round((processing_completed_at - processing_started_at).total_seconds() * 1000, 2)
       
-        
         updated_rows = db.query(RawMessages).filter(
             RawMessages.id == raw_msg.id,
             RawMessages.processed == False
@@ -267,15 +338,12 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
             RawMessages.processed: True,
             RawMessages.processing_status: processing_outcome,
             RawMessages.processing_started_at: processing_started_at,
-            RawMessages.processing_completed_at: processing_completed_at # <-- Stored exactly
+            RawMessages.processing_completed_at: processing_completed_at 
         }, synchronize_session=False)
         
         if updated_rows == 0:
             db.rollback()
             processing_outcome = "duplicate_detected"
-            processing_completed_at = datetime.now(timezone.utc)
-            processing_duration_ms = round((processing_completed_at - processing_started_at).total_seconds() * 1000, 2)
-            
             logger.warning(json.dumps({
                 "event_type": "duplicate_detected",
                 "job_id": job.job_id,
@@ -289,48 +357,7 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
                 "message": "Message was completed by another worker during execution. Update aborted."
             }))
             return True
-
-        parser = AIParser()
-        extraction_result = parser.parse_single(
-            text=normalized_text,
-            timestamp=final_message_timestamp.isoformat()
-        )
-
-        if extraction_result and extraction_result.confidence > 0.0 and extraction_result.amount is not None:
-            txn_date = final_message_timestamp
-            if extraction_result.date:
-                try:
-                    txn_date = datetime.strptime(extraction_result.date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                except ValueError:
-                    logger.warning(f"Could not parse LLM date output: {extraction_result.date}")
-
-            new_transaction = Transactions(
-                tenant_id = raw_msg.tenant_id,
-                raw_message_id = raw_msg.id,
-                amount=extraction_result.amount,
-                currency=extraction_result.currency or "ZMW",
-                txn_type=extraction_result.transaction_verb,
-                txn_date=txn_date,
-                confidence=extraction_result.confidence,
-                status="PARSED",
-                hash=content_hash,
-                parsing_meta={
-                    "source": "gemini-2.5-flash",
-                    "raw_ai_output": extraction_result.model_dump()
-                }
-            )
-            db.add(new_transaction)
-            logger.info(json.dumps({
-                "event_type": "transaction_extracted",
-                "job_id": job.job_id,
-                "amount": new_transaction.amount,
-                "currency": new_transaction.currency,
-                "confidence": new_transaction.confidence
-            }))
-
-            processing_outcome = "success"
-
-            processing_completed_at = datetime.now(timezone.utc)
+        
         db.commit()
 
         logger.info(json.dumps({
@@ -385,8 +412,8 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
             "raw_message_id": job.raw_message_id,
             "error": str(e),
             "processing_outcome": processing_outcome,
-            "processing_duration_ms": processing_duration_ms, # <-- Added duration
-            "worker_identifier": WORKER_IDENTIFIER,           # <-- Added worker ID
+            "processing_duration_ms": processing_duration_ms, 
+            "worker_identifier": WORKER_IDENTIFIER,           
             "timestamp": processing_completed_at.isoformat()
         }), exc_info=True)
         return False
