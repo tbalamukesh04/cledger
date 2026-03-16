@@ -17,6 +17,8 @@ from app.models.participants import Participants
 from app.utils.text_processing import normalize_whatsapp_text
 from app.utils.datetime_utils import convert_epoch_to_utc_datetime
 from app.utils.hashing import generate_content_hash
+from app.ai.ai_parser import AIParser
+from app.models.transactions import Transactions
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +290,47 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
             }))
             return True
 
+        parser = AIParser()
+        extraction_result = parser.parse_single(
+            text=normalized_text,
+            timestamp=final_message_timestamp.isoformat()
+        )
+
+        if extraction_result and extraction_result.confidence > 0.0 and extraction_result.amount is not None:
+            txn_date = final_message_timestamp
+            if extraction_result.date:
+                try:
+                    txn_date = datetime.strptime(extraction_result.date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                except ValueError:
+                    logger.warning(f"Could not parse LLM date output: {extraction_result.date}")
+
+            new_transaction = Transactions(
+                tenant_id = raw_msg.tenant_id,
+                raw_message_id = raw_msg.id,
+                amount=extraction_result.amount,
+                currency=extraction_result.currency or "ZMW",
+                txn_type=extraction_result.transaction_verb,
+                txn_date=txn_date,
+                confidence=extraction_result.confidence,
+                status="PARSED",
+                hash=content_hash,
+                parsing_meta={
+                    "source": "gemini-2.5-flash",
+                    "raw_ai_output": extraction_result.model_dump()
+                }
+            )
+            db.add(new_transaction)
+            logger.info(json.dumps({
+                "event_type": "transaction_extracted",
+                "job_id": job.job_id,
+                "amount": new_transaction.amount,
+                "currency": new_transaction.currency,
+                "confidence": new_transaction.confidence
+            }))
+
+            processing_outcome = "success"
+
+            processing_completed_at = datetime.now(timezone.utc)
         db.commit()
 
         logger.info(json.dumps({
