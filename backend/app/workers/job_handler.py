@@ -21,6 +21,8 @@ from app.ai.ai_parser import AIParser
 from app.models.transactions import Transactions
 from app.utils.date_normalization import normalize_extracted_date
 from app.utils.financial_validation import validate_and_convert_amount, normalize_currency_code, normalize_transaction_verb
+from app.ai.batch_request_builder import build_batch_request_payload
+from typing import List, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -93,334 +95,161 @@ def _generate_content_hash(text: str | None, timestamp: datetime) -> str:
     base_string = f"{text or ''}|{timestamp.isoformat()}"
     return hashlib.sha256(base_string.encode('utf-8')).hexdigest()
 
-def process_webhook_job(job: WebhookJobPayload) -> bool:
+def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
+    """
+    Processes a batch of webhook jobs in a single database transaction and a single AI API call.
+    Returns a dictionary mapping job_id to the string status: "success", "retry", or "dlq".
+    """
     db = SessionLocal()
-
     processing_started_at = datetime.now(timezone.utc)
-    processing_outcome = "unknown"
-    
-    try:
-        logger.info(json.dumps({
-            "event_type": "job_processing_started", 
-            "job_id": job.job_id,
-            "raw_message_id": job.raw_message_id,
-            "timestamp": processing_started_at.isoformat()
-        }))
+    job_results = {job.job_id: "retry" for job in jobs} # Default to retry in case of crash
 
-        raw_msg = db.query(RawMessages).options(
+    try:
+        # 1. Fetch all raw messages for the batch efficiently
+        raw_msg_ids = [job.raw_message_id for job in jobs]
+        raw_messages = db.query(RawMessages).options(
             joinedload(RawMessages.sender),
             joinedload(RawMessages.group)
-        ).filter(RawMessages.id == job.raw_message_id).first()
+        ).filter(RawMessages.id.in_(raw_msg_ids)).all()
+
+        raw_msg_map = {msg.id: msg for msg in raw_messages}
         
-        if not raw_msg:
-            processing_outcome = "failure"
-            processing_completed_at = datetime.now(timezone.utc)
-            processing_duration_ms = round((processing_completed_at - processing_started_at).total_seconds() * 1000, 2)
+        preprocessed_batch = []
+        valid_jobs_map = {}
+
+        # 2. Preprocess and filter duplicates locally
+        for job in jobs:
+            raw_msg = raw_msg_map.get(job.raw_message_id)
+            if not raw_msg:
+                logger.error(f"Job {job.job_id}: RawMessage {job.raw_message_id} not found.")
+                job_results[job.job_id] = "dlq"
+                continue
+
+            raw_text = _extract_message_text(raw_msg.raw_json)
+            normalized_text = normalize_whatsapp_text(raw_text)
             
-            logger.error(json.dumps({
-                "event_type": "job_processing_error",
-                "extraction_status": "failed",
-                "reason": "RawMessage record not found in database",
-                "job_id": job.job_id,
-                "raw_message_id": job.raw_message_id,
-                "processing_outcome": processing_outcome,
-                "processing_duration_ms": processing_duration_ms,
-                "worker_identifier": WORKER_IDENTIFIER,
-                "timestamp": processing_completed_at.isoformat()
-            }))
-            return False
-
-        raw_text = _extract_message_text(raw_msg.raw_json)
-        normalized_text = normalize_whatsapp_text(raw_text)
-        
-        raw_epoch_str = _extract_message_timestamp(raw_msg.raw_json)
-        parsed_epoch_int = _parse_epoch_to_int(raw_epoch_str)
-        normalized_timestamp = convert_epoch_to_utc_datetime(parsed_epoch_int)
-        final_message_timestamp = normalized_timestamp or raw_msg.received_at or job.message_timestamp
-        
-        content_hash = generate_content_hash(normalized_text, final_message_timestamp)
-
-        is_native_wamid = raw_msg.message_id and raw_msg.message_id.startswith("wamid.")
-
-        if is_native_wamid:
-            idempotency_key = raw_msg.message_id
-            idempotency_source = "whatsapp_message_id"
-        else:
-            idempotency_key = f"idem_content_{content_hash}"
-            idempotency_source = "content_hash"
-
-        duplicate_record = None
-        
-        if raw_msg.processed:
-            duplicate_record = raw_msg
-        else:
-            if is_native_wamid:
-                duplicate_record = db.query(RawMessages).filter(
-                    RawMessages.message_id == idempotency_key,
-                    RawMessages.id != raw_msg.id,
-                    RawMessages.processed == True
-                ).first()
-
-            if not duplicate_record:
-                duplicate_record = db.query(RawMessages).filter(
-                    RawMessages.hash == idempotency_key,
-                    RawMessages.id != raw_msg.id,
-                    RawMessages.processed == True
-                ).first()
-
-        if duplicate_record:
-            processing_outcome = "duplicate_detected"
-            processing_completed_at = datetime.now(timezone.utc)
-            processing_duration_ms = round((processing_completed_at - processing_started_at).total_seconds() * 1000, 2)
+            raw_epoch_str = _extract_message_timestamp(raw_msg.raw_json)
+            parsed_epoch_int = _parse_epoch_to_int(raw_epoch_str)
+            normalized_timestamp = convert_epoch_to_utc_datetime(parsed_epoch_int)
+            final_timestamp = normalized_timestamp or raw_msg.received_at or job.message_timestamp
             
-            logger.warning(json.dumps({
-                "event_type": "duplicate_detected",
-                "job_id": job.job_id,
-                "raw_message_id": raw_msg.id,
-                "whatsapp_message_id": raw_msg.message_id,
-                "message_hash": content_hash,
-                "duplicate_status": "aborted",
-                "duplicate_of_id": duplicate_record.id,
-                "idempotency_key": idempotency_key,
-                "reason": "already_processed" if raw_msg.processed else "redundant_delivery",
-                "processing_outcome": processing_outcome,
-                "processing_duration_ms": processing_duration_ms, 
-                "worker_identifier": WORKER_IDENTIFIER,            
-                "timestamp": processing_completed_at.isoformat(),
-                "message": "Duplicate detected. Aborting pipeline safely."
-            }))
-            return True
+            content_hash = generate_content_hash(normalized_text, final_timestamp)
+            is_native_wamid = raw_msg.message_id and raw_msg.message_id.startswith("wamid.")
+            idempotency_key = raw_msg.message_id if is_native_wamid else f"idem_content_{content_hash}"
 
-        if raw_msg.hash != idempotency_key:
-            try:
-                raw_msg.hash = idempotency_key
-                db.commit()
-            except IntegrityError:
-                db.rollback()
-                processing_outcome = "duplicate_detected"
-                processing_completed_at = datetime.now(timezone.utc)
-                processing_duration_ms = round((processing_completed_at - processing_started_at).total_seconds() * 1000, 2)
-                
-                logger.warning(json.dumps({
-                    "event_type": "duplicate_detected",
-                    "job_id": job.job_id,
-                    "raw_message_id": raw_msg.id,
-                    "whatsapp_message_id": raw_msg.message_id,
-                    "message_hash": content_hash,
-                    "duplicate_status": "concurrent_abort",
-                    "idempotency_key": idempotency_key,
-                    "reason": "concurrent_hash_collision",
-                    "processing_outcome": processing_outcome,
-                    "processing_duration_ms": processing_duration_ms,
-                    "worker_identifier": WORKER_IDENTIFIER,
-                    "timestamp": processing_completed_at.isoformat(),
-                    "message": "Race condition caught. Duplicate hash insertion prevented."
-                }))
-                return True
+            if raw_msg.processed:
+                logger.warning(f"Job {job.job_id}: Already processed. Skipping.")
+                job_results[job.job_id] = "success"
+                continue
 
-        sender_phone = raw_msg.sender.phone if raw_msg.sender else None
-        sender_name = raw_msg.sender.displayname if raw_msg.sender else None
-        group_whatsapp_id = raw_msg.group.group_id if raw_msg.group else None
-        group_name = raw_msg.group.groupname if raw_msg.group else None
-        
-        preprocessed_data = PreprocessedPayload(
-            raw_message_id=raw_msg.id,
-            participant_id=raw_msg.sender_id,
-            sender_phone=sender_phone,
-            sender_name=sender_name,
-            group_id=raw_msg.group_id,
-            group_whatsapp_id=group_whatsapp_id,
-            group_name=group_name,
-            normalized_timestamp=final_message_timestamp, 
-            message_id=raw_msg.message_id,
-            message_type=job.webhook_event_type,
-            normalized_text=normalized_text,
-            message_hash = content_hash,
-            idempotency_identifier = idempotency_key
-        )
+            # Check DB Hash collision constraint locally
+            if raw_msg.hash != idempotency_key:
+                raw_msg.hash = idempotency_key # Staged for commit later
 
-        # ---------------------------------------------------------
-        # --- PIPELINE STAGE 2: AI Extraction ---
-        # ---------------------------------------------------------
-        parser = AIParser()
-        extraction_result = parser.parse_single(
-            text=normalized_text,
-            timestamp=final_message_timestamp.isoformat()
-        )
-        # ---------------------------------------------------------
-        # --- PIPELINE STAGE 3: Validation, Normalization & Context ---
-        # ---------------------------------------------------------
-        validated_amount = None
-        normalized_currency = "ZMW"
-        confidence_score = 0.0
-        raw_extracted_date = None
-        raw_extracted_verb = None
-
-        if extraction_result:
-            validated_amount = validate_and_convert_amount(extraction_result.amount)
-            normalized_currency = normalize_currency_code(extraction_result.currency)
-            confidence_score = extraction_result.confidence
-            raw_extracted_date = extraction_result.date
-            raw_extracted_verb = extraction_result.transaction_verb
-
-        # Safely parse and normalize the date and verb
-        normalized_txn_date = normalize_extracted_date(raw_extracted_date, final_message_timestamp)
-        normalized_txn_verb = normalize_transaction_verb(raw_extracted_verb)
-
-        worker_context = {
-            "job_id": job.job_id,
-            "preprocessed_data": preprocessed_data,
-            "extracted_amount": validated_amount,
-            "extracted_currency": normalized_currency,
-            "extracted_date": raw_extracted_date,            # <-- Raw AI Date
-            "normalized_date": normalized_txn_date,          # <-- UTC DB Datetime
-            "transaction_verb": normalized_txn_verb,         # <-- Safe 'credit' / 'debit'
-            "extraction_confidence": confidence_score,
-            "classification_status": "PENDING"
-        }
-
-        # Status requires both a valid amount AND a valid verb to proceed
-        extraction_status = "SUCCESS" if (validated_amount is not None and normalized_txn_verb is not None) else "FAILED_OR_NON_TRANSACTION"
-        
-        logger.info(json.dumps({
-            "event_type": "extraction_completed",
-            "job_id": job.job_id,
-            "raw_message_id": raw_msg.id,
-            "extracted_amount": float(validated_amount) if validated_amount is not None else None,
-            "extracted_currency": normalized_currency,
-            "extracted_date": raw_extracted_date,
-            "normalized_date": normalized_txn_date.isoformat(),
-            "transaction_verb": normalized_txn_verb,
-            "extraction_confidence": confidence_score,
-            "extraction_status": extraction_status
-        }))
-
-        # ---------------------------------------------------------
-        # --- PIPELINE STAGE 4: Database Storage ---
-        # ---------------------------------------------------------
-        if worker_context["extracted_amount"] is not None and worker_context["transaction_verb"] in ['credit', 'debit']:
+            sender_phone = raw_msg.sender.phone if raw_msg.sender else None
+            sender_name = raw_msg.sender.displayname if raw_msg.sender else None
+            group_whatsapp_id = raw_msg.group.group_id if raw_msg.group else None
+            group_name = raw_msg.group.groupname if raw_msg.group else None
             
-            new_transaction = Transactions(
-                tenant_id = raw_msg.tenant_id,
-                raw_message_id = raw_msg.id,
-                amount=worker_context["extracted_amount"],  
-                currency=worker_context["extracted_currency"],
-                txn_type=worker_context["transaction_verb"],
-                txn_date=worker_context["normalized_date"], # <-- Pulled safely from formal context
-                confidence=worker_context["extraction_confidence"],
-                status="PARSED", 
-                hash=content_hash,
-                parsing_meta={
-                    "source": "gemini-2.5-flash",
-                    "raw_ai_output": extraction_result.model_dump() if extraction_result else None
-                }
+            preprocessed_data = PreprocessedPayload(
+                raw_message_id=raw_msg.id,
+                participant_id=raw_msg.sender_id,
+                sender_phone=sender_phone,
+                sender_name=sender_name,
+                group_id=raw_msg.group_id,
+                group_whatsapp_id=group_whatsapp_id,
+                group_name=group_name,
+                normalized_timestamp=final_timestamp, 
+                message_id=raw_msg.message_id,
+                message_type=job.webhook_event_type,
+                normalized_text=normalized_text,
+                message_hash=content_hash,
+                idempotency_identifier=idempotency_key
             )
-            db.add(new_transaction)
+            preprocessed_batch.append(preprocessed_data)
+            valid_jobs_map[job.raw_message_id] = job
 
-            worker_context['classification_status'] = "PARSED"
+        if not preprocessed_batch:
+            db.commit()
+            return job_results
 
+        # 3. AI EXTRACTION (Batch Call)
+        parser = AIParser()
+        batch_request = build_batch_request_payload(preprocessed_batch)
+        extraction_results = parser.parse_batch(batch_request)
+
+        # 4. Process Results and Stage DB Updates
+        for idx, preprocessed_data in enumerate(preprocessed_batch):
+            raw_msg = raw_msg_map[preprocessed_data.raw_message_id]
+            job = valid_jobs_map[preprocessed_data.raw_message_id]
+            extraction_result = extraction_results[idx]
+
+            validated_amount = None
+            normalized_currency = "ZMW"
+            confidence_score = 0.0
+            raw_extracted_date = None
+            raw_extracted_verb = None
+
+            if extraction_result:
+                validated_amount = validate_and_convert_amount(extraction_result.amount)
+                normalized_currency = normalize_currency_code(extraction_result.currency)
+                confidence_score = extraction_result.confidence
+                raw_extracted_date = extraction_result.date
+                raw_extracted_verb = extraction_result.transaction_verb
+                
+            normalized_txn_verb = normalize_transaction_verb(raw_extracted_verb)
+            extraction_status = "SUCCESS" if (validated_amount is not None and normalized_txn_verb is not None) else ("NON_TRANSACTION" if extraction_result else "AI_EXTRACTION_FAILED")
+            normalized_txn_date = normalize_extracted_date(raw_extracted_date, preprocessed_data.normalized_timestamp)
+
+            if extraction_status == "SUCCESS":
+                new_transaction = Transactions(
+                    tenant_id=raw_msg.tenant_id,
+                    raw_message_id=raw_msg.id,
+                    amount=validated_amount,  
+                    currency=normalized_currency,
+                    txn_type=normalized_txn_verb,
+                    txn_date=normalized_txn_date,
+                    confidence=confidence_score,
+                    status="PARSED", 
+                    hash=preprocessed_data.message_hash,
+                    parsing_meta={"source": "gemini-2.5-flash", "batch_processed": True, "raw_ai_output": extraction_result.model_dump() if extraction_result else None}
+                )
+                db.add(new_transaction)
+                raw_msg.is_transaction = True
+
+            processing_outcome = "success" if extraction_status in ["SUCCESS", "NON_TRANSACTION"] else "success_with_fallback"
+            
+            raw_msg.processed = True
+            raw_msg.processing_status = processing_outcome
+            raw_msg.processing_started_at = processing_started_at
+            raw_msg.processing_completed_at = datetime.now(timezone.utc)
+            
+            job_results[job.job_id] = "success"
+
+        # 5. Commit whole batch
+        try:
+            db.commit()
             logger.info(json.dumps({
-                "event_type": "transaction_extracted",
-                "job_id": job.job_id,
-                "amount": float(new_transaction.amount),  
-                "currency": new_transaction.currency,
-                "txn_type": new_transaction.txn_type,
-                "txn_date": new_transaction.txn_date.isoformat(), 
-                "confidence": new_transaction.confidence
+                "event_type": "batch_processing_completed",
+                "batch_size": len(preprocessed_batch),
+                "worker_identifier": WORKER_IDENTIFIER
             }))
-        # ---------------------------------------------------------
-        # --- FINALIZE TIMESTAMPS & UPDATE RAW MESSAGE ---
-        # ---------------------------------------------------------
-        processing_outcome = "success"
-        processing_completed_at = datetime.now(timezone.utc)
-        processing_duration_ms = round((processing_completed_at - processing_started_at).total_seconds() * 1000, 2)
-      
-        updated_rows = db.query(RawMessages).filter(
-            RawMessages.id == raw_msg.id,
-            RawMessages.processed == False
-        ).update({
-            RawMessages.processed: True,
-            RawMessages.processing_status: processing_outcome,
-            RawMessages.processing_started_at: processing_started_at,
-            RawMessages.processing_completed_at: processing_completed_at 
-        }, synchronize_session=False)
-        
-        if updated_rows == 0:
+        except IntegrityError as e:
             db.rollback()
-            processing_outcome = "duplicate_detected"
-            logger.warning(json.dumps({
-                "event_type": "duplicate_detected",
-                "job_id": job.job_id,
-                "raw_message_id": raw_msg.id,
-                "duplicate_status": "late_stage_concurrent_abort",
-                "reason": "already_processed_during_execution",
-                "processing_outcome": processing_outcome,
-                "processing_duration_ms": processing_duration_ms,  
-                "worker_identifier": WORKER_IDENTIFIER,            
-                "timestamp": processing_completed_at.isoformat(),
-                "message": "Message was completed by another worker during execution. Update aborted."
-            }))
-            return True
-        
-        db.commit()
+            logger.warning(f"Batch DB commit failed due to integrity error: {e}")
+            # Fall back to retrying jobs individually or fail batch
+            for job in jobs:
+                job_results[job.job_id] = "retry"
 
-        logger.info(json.dumps({
-            "event_type": "job_processing_completed",
-            "job_id": job.job_id,
-            "raw_message_id": raw_msg.id,
-            "processing_outcome": processing_outcome,
-            "processing_duration_ms": processing_duration_ms,
-            "worker_identifier": WORKER_IDENTIFIER,
-            "timestamp": processing_completed_at.isoformat(),
-            "message": "Job successfully processed and database state updated."
-        }))
-
-        return True
+        return job_results
 
     except RETRYABLE_EXCEPTIONS as e:
         db.rollback()
-        logger.warning(json.dumps({
-            "event_type": "job_transient_failure",
-            "job_id": job.job_id,
-            "raw_message_id": job.raw_message_id,
-            "error": str(e),
-            "message": "Transient error encountered. Bubbling up to retry handler."
-        }))
-        raise  # Let the worker service catch this to trigger a retry!
-
-
+        logger.warning(f"Transient error in batch: {e}")
+        return {job.job_id: "retry" for job in jobs}
     except Exception as e:
         db.rollback()
-        processing_outcome = "failure"
-        
-        # --- Calculate duration on failure ---
-        processing_completed_at = datetime.now(timezone.utc)
-        processing_duration_ms = round((processing_completed_at - processing_started_at).total_seconds() * 1000, 2)
-        # -------------------------------------
-        
-        try:
-            db.query(RawMessages).filter(RawMessages.id == job.raw_message_id).update({
-                RawMessages.processing_status: processing_outcome,
-                RawMessages.processing_started_at: processing_started_at,
-                RawMessages.processing_completed_at: processing_completed_at
-            }, synchronize_session=False)
-            db.commit()
-        except Exception as inner_e:
-            db.rollback()
-            logger.error(f"Failed to save failure state to DB: {inner_e}")
-        
-        logger.error(json.dumps({
-            "event_type": "job_processing_failed",
-            "extraction_status": "error",
-            "job_id": job.job_id,
-            "raw_message_id": job.raw_message_id,
-            "error": str(e),
-            "processing_outcome": processing_outcome,
-            "processing_duration_ms": processing_duration_ms, 
-            "worker_identifier": WORKER_IDENTIFIER,           
-            "timestamp": processing_completed_at.isoformat()
-        }), exc_info=True)
-        return False
-        
+        logger.error(f"Fatal error in batch processing: {e}", exc_info=True)
+        return {job.job_id: "dlq" for job in jobs}
     finally:
         db.close()

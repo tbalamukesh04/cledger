@@ -14,6 +14,8 @@ from app.schemas.jobs import WebhookJobPayload
 from app.workers.job_handler import process_webhook_job, RETRYABLE_EXCEPTIONS
 from app.config.logging_config import setup_logging
 from app.utils.backoff import apply_exponential_backoff
+from app.ai.config import AI_BATCH_SIZE, AI_BATCH_TIMEOUT_SECONDS
+from app.workers.job_handler import process_webhook_batch
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -65,108 +67,67 @@ def start_worker():
             "event_type": "job_recovered_from_crash",
             "message": "Orphaned job safely returned to main queue."
         }))
-    # ==========================================================
-
-    logger.info(json.dumps({"event_type": "worker_listening"}))
+    
+    logger.info(json.dumps({"event_type": "worker_listening", "batch_size": AI_BATCH_SIZE}))
 
     while is_running:
         try:
-            # Atomically pop from main queue and push to active processing queue
-            payload_str = redis_client.brpoplpush(WEBHOOK_QUEUE_NAME, WEBHOOK_ACTIVE_QUEUE, timeout=5)
+            batch_payloads = []
+            batch_jobs = []
+            start_time = time.time()
 
-            if payload_str:
-                job = None
-                try:
-                    payload_dict = json.loads(payload_str)
-                    job = WebhookJobPayload(**payload_dict)
-
-                    logger.info(json.dumps({
-                        "event_type": "job_dequeued",
-                        "job_id": job.job_id,
-                        "raw_message_id": job.raw_message_id
-                    }))
-
-                    for attempt in range(1, MAX_RETRIES + 2):
-                        try:
-                            success = process_webhook_job(job)
-
-                            if success:
-                                # Processing succeeded, safely remove from the active queue
-                                redis_client.lrem(WEBHOOK_ACTIVE_QUEUE, 1, payload_str)
-                                break
-                            else:
-                                # Permanent business logic failure (e.g., DB parsing error) -> Route to DLQ
-                                redis_client.lpush(WEBHOOK_DLQ_NAME, job.to_json())
-                                redis_client.lrem(WEBHOOK_ACTIVE_QUEUE, 1, payload_str)
-                                logger.warning(json.dumps({
-                                    "event_type": "job_routed_to_dlq",
-                                    "reason": "handler_returned_false",
-                                    "job_id": job.job_id
-                                }))
-                                break 
-                            
-                        except RETRYABLE_EXCEPTIONS as e:
-                            if attempt <= MAX_RETRIES:
-                                job.retry_count += 1
-                                logger.warning(json.dumps({
-                                    "event_type": "job_transient_failure",
-                                    "raw_message_id": job.raw_message_id,
-                                    "retry_attempt": job.retry_count,
-                                    "max_retries": MAX_RETRIES,
-                                    "error_type": type(e).__name__,
-                                    "error_message": str(e),
-                                    "timestamp": datetime.now(timezone.utc).isoformat()
-                                }))
-                                apply_exponential_backoff(job.retry_count, BASE_RETRY_DELAY_SECONDS)
-                            else:
-                                # Max Retries exceeded -> Route to DLQ
-                                logger.error(json.dumps({
-                                    "event_type": "job_max_retries_exceeded",
-                                    "raw_message_id": job.raw_message_id,
-                                    "retry_attempt": attempt,
-                                    "error_type": type(e).__name__,
-                                    "error_message": str(e),
-                                    "timestamp": datetime.now(timezone.utc).isoformat()
-                                }))
-                                redis_client.lpush(WEBHOOK_DLQ_NAME, job.to_json())
-                                redis_client.lrem(WEBHOOK_ACTIVE_QUEUE, 1, payload_str)
-                                logger.info(json.dumps({
-                                    "event_type": "job_routed_to_dlq",
-                                    "reason": "max_retries_exceeded",
-                                    "job_id": job.job_id
-                                }))
-                                break
-
-                except (json.JSONDecodeError, ValidationError) as e:
-                    # Structural Error -> Immediate DLQ
-                    logger.error(json.dumps({
-                        "event_type": "job_validation_error",
-                        "error_type": type(e).__name__,
-                        "error_message": str(e),
-                        "raw_payload": payload_str,
-                        "timestamp": datetime.now(timezone.utc).isoformat()
-                    }))
-                    redis_client.lpush(WEBHOOK_DLQ_NAME, payload_str)
-                    redis_client.lrem(WEBHOOK_ACTIVE_QUEUE, 1, payload_str)
-                    
-                except Exception as e:
-                    logger.error(json.dumps({
-                        "event_type": "job_unhandled_exception",
-                        "error_type": type(e).__name__,
-                        "error_message": str(e),
-                        "timestamp": datetime.now(timezone.utc).isoformat()
-                    }), exc_info=True)
-                    if job:
-                        redis_client.lpush(WEBHOOK_DLQ_NAME, job.to_json())
-                    else:
+            # 1. Gather Batch loop
+            while len(batch_payloads) < AI_BATCH_SIZE and is_running:
+                # Use a short 1-second timeout so we can respect the overall BATCH_TIMEOUT
+                payload_str = redis_client.brpoplpush(WEBHOOK_QUEUE_NAME, WEBHOOK_ACTIVE_QUEUE, timeout=1)
+                
+                if payload_str:
+                    batch_payloads.append(payload_str)
+                    try:
+                        job = WebhookJobPayload(**json.loads(payload_str))
+                        batch_jobs.append(job)
+                    except (json.JSONDecodeError, ValidationError) as e:
+                        logger.error(f"Job validation error, sending to DLQ: {e}")
                         redis_client.lpush(WEBHOOK_DLQ_NAME, payload_str)
-                    redis_client.lrem(WEBHOOK_ACTIVE_QUEUE, 1, payload_str)
+                        redis_client.lrem(WEBHOOK_ACTIVE_QUEUE, 1, payload_str)
+                        batch_payloads.remove(payload_str) # Don't process this one
+                
+                if time.time() - start_time >= AI_BATCH_TIMEOUT_SECONDS:
+                    break
+
+            # 2. Process Batch
+            if batch_jobs:
+                logger.info(json.dumps({"event_type": "executing_batch", "size": len(batch_jobs)}))
+                
+                # We execute the new batch handler
+                results = process_webhook_batch(batch_jobs)
+
+                # 3. Cleanup Active Queue based on results
+                for payload_str, job in zip(batch_payloads, batch_jobs):
+                    status = results.get(job.job_id, "retry")
                     
+                    if status == "success":
+                        redis_client.lrem(WEBHOOK_ACTIVE_QUEUE, 1, payload_str)
+                        
+                    elif status == "dlq":
+                        redis_client.lpush(WEBHOOK_DLQ_NAME, job.to_json())
+                        redis_client.lrem(WEBHOOK_ACTIVE_QUEUE, 1, payload_str)
+                        
+                    elif status == "retry":
+                        job.retry_count += 1
+                        if job.retry_count > MAX_RETRIES:
+                            logger.error(f"Job {job.job_id} max retries exceeded. Moving to DLQ.")
+                            redis_client.lpush(WEBHOOK_DLQ_NAME, job.to_json())
+                            redis_client.lrem(WEBHOOK_ACTIVE_QUEUE, 1, payload_str)
+                        else:
+                            # Re-queue for next attempt
+                            logger.warning(f"Job {job.job_id} retrying ({job.retry_count}/{MAX_RETRIES}).")
+                            redis_client.lpush(WEBHOOK_QUEUE_NAME, job.to_json())
+                            redis_client.lrem(WEBHOOK_ACTIVE_QUEUE, 1, payload_str)
+                            apply_exponential_backoff(job.retry_count, BASE_RETRY_DELAY_SECONDS)
+
         except Exception as e:
-            logger.error(json.dumps({
-                "event_type": "redis_polling_error", 
-                "error": str(e)
-            }))
+            logger.error(json.dumps({"event_type": "redis_polling_error", "error": str(e)}))
             time.sleep(2) 
 
     logger.info(json.dumps({"event_type": "worker_shutdown_complete"}))
