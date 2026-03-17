@@ -22,6 +22,7 @@ from app.models.transactions import Transactions
 from app.utils.date_normalization import normalize_extracted_date
 from app.utils.financial_validation import validate_and_convert_amount, normalize_currency_code, normalize_transaction_verb
 from app.ai.batch_request_builder import build_batch_request_payload
+from app.parsing.scoring_engine import ScoringEngine
 from typing import List, Dict
 
 logger = logging.getLogger(__name__)
@@ -174,9 +175,13 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             return job_results
 
         # 3. AI EXTRACTION (Batch Call)
+        # 3. AI EXTRACTION (Batch Call)
         parser = AIParser()
         batch_request = build_batch_request_payload(preprocessed_batch)
         extraction_results = parser.parse_batch(batch_request)
+
+        # Instantiate the Scoring Engine
+        scoring_engine = ScoringEngine()
 
         # 4. Process Results and Stage DB Updates
         for idx, preprocessed_data in enumerate(preprocessed_batch):
@@ -190,6 +195,12 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             raw_extracted_date = None
             raw_extracted_verb = None
 
+            # --- NEW PIPELINE STAGE: Scoring Engine ---
+            is_transaction, total_score, scoring_meta = scoring_engine.evaluate(
+                extraction=extraction_result,
+                original_text=preprocessed_data.normalized_text or ""
+            )
+
             if extraction_result:
                 validated_amount = validate_and_convert_amount(extraction_result.amount)
                 normalized_currency = normalize_currency_code(extraction_result.currency)
@@ -198,8 +209,16 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 raw_extracted_verb = extraction_result.transaction_verb
                 
             normalized_txn_verb = normalize_transaction_verb(raw_extracted_verb)
-            extraction_status = "SUCCESS" if (validated_amount is not None and normalized_txn_verb is not None) else ("NON_TRANSACTION" if extraction_result else "AI_EXTRACTION_FAILED")
             normalized_txn_date = normalize_extracted_date(raw_extracted_date, preprocessed_data.normalized_timestamp)
+
+            # Assign Status based on Scoring Engine Decision
+            if not extraction_result:
+                extraction_status = "AI_EXTRACTION_FAILED"
+            elif is_transaction and validated_amount is not None and normalized_txn_verb is not None:
+                extraction_status = "SUCCESS"
+            else:
+                # Fell below threshold or lacked critical normalized fields
+                extraction_status = "NON_TRANSACTION" 
 
             if extraction_status == "SUCCESS":
                 new_transaction = Transactions(
@@ -212,7 +231,13 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                     confidence=confidence_score,
                     status="PARSED", 
                     hash=preprocessed_data.message_hash,
-                    parsing_meta={"source": "gemini-2.5-flash", "batch_processed": True, "raw_ai_output": extraction_result.model_dump() if extraction_result else None}
+                    # --- Inject Scoring Metadata into Database ---
+                    parsing_meta={
+                        "source": "gemini-2.5-flash", 
+                        "batch_processed": True, 
+                        "scoring_breakdown": scoring_meta,
+                        "raw_ai_output": extraction_result.model_dump() if extraction_result else None
+                    }
                 )
                 db.add(new_transaction)
                 raw_msg.is_transaction = True
