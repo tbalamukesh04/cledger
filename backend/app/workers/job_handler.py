@@ -19,7 +19,8 @@ from app.utils.datetime_utils import convert_epoch_to_utc_datetime
 from app.utils.hashing import generate_content_hash
 from app.ai.ai_parser import AIParser
 from app.models.transactions import Transactions
-from app.utils.financial_validation import validate_and_convert_amount, normalize_currency_code
+from app.utils.date_normalization import normalize_extracted_date
+from app.utils.financial_validation import validate_and_convert_amount, normalize_currency_code, normalize_transaction_verb
 
 logger = logging.getLogger(__name__)
 
@@ -246,39 +247,50 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
             text=normalized_text,
             timestamp=final_message_timestamp.isoformat()
         )
-
         # ---------------------------------------------------------
-        # --- PIPELINE STAGE 3: Numeric Validation & Context ---
+        # --- PIPELINE STAGE 3: Validation, Normalization & Context ---
         # ---------------------------------------------------------
         validated_amount = None
         normalized_currency = "ZMW"
         confidence_score = 0.0
-        txn_verb = None
+        raw_extracted_date = None
+        raw_extracted_verb = None
 
         if extraction_result:
             validated_amount = validate_and_convert_amount(extraction_result.amount)
             normalized_currency = normalize_currency_code(extraction_result.currency)
             confidence_score = extraction_result.confidence
-            txn_verb = extraction_result.transaction_verb
+            raw_extracted_date = extraction_result.date
+            raw_extracted_verb = extraction_result.transaction_verb
+
+        # Safely parse and normalize the date and verb
+        normalized_txn_date = normalize_extracted_date(raw_extracted_date, final_message_timestamp)
+        normalized_txn_verb = normalize_transaction_verb(raw_extracted_verb)
 
         worker_context = {
             "job_id": job.job_id,
             "preprocessed_data": preprocessed_data,
             "extracted_amount": validated_amount,
             "extracted_currency": normalized_currency,
+            "extracted_date": raw_extracted_date,            # <-- Raw AI Date
+            "normalized_date": normalized_txn_date,          # <-- UTC DB Datetime
+            "transaction_verb": normalized_txn_verb,         # <-- Safe 'credit' / 'debit'
             "extraction_confidence": confidence_score,
-            "transaction_verb": txn_verb,
             "classification_status": "PENDING"
         }
 
-        extraction_status = "SUCCESS" if validated_amount is not None else "FAILED_OR_NON_TRANSACTION"
+        # Status requires both a valid amount AND a valid verb to proceed
+        extraction_status = "SUCCESS" if (validated_amount is not None and normalized_txn_verb is not None) else "FAILED_OR_NON_TRANSACTION"
         
         logger.info(json.dumps({
-            "event_type": "monetary_extraction_completed",
+            "event_type": "extraction_completed",
             "job_id": job.job_id,
             "raw_message_id": raw_msg.id,
             "extracted_amount": float(validated_amount) if validated_amount is not None else None,
             "extracted_currency": normalized_currency,
+            "extracted_date": raw_extracted_date,
+            "normalized_date": normalized_txn_date.isoformat(),
+            "transaction_verb": normalized_txn_verb,
             "extraction_confidence": confidence_score,
             "extraction_status": extraction_status
         }))
@@ -286,23 +298,15 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
         # ---------------------------------------------------------
         # --- PIPELINE STAGE 4: Database Storage ---
         # ---------------------------------------------------------
-        # Only proceed if we have a valid amount and a clear credit/debit verb
         if worker_context["extracted_amount"] is not None and worker_context["transaction_verb"] in ['credit', 'debit']:
             
-            txn_date = final_message_timestamp
-            if extraction_result and extraction_result.date:
-                try:
-                    txn_date = datetime.strptime(extraction_result.date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                except ValueError:
-                    logger.warning(f"Could not parse LLM date output: {extraction_result.date}")
-    
             new_transaction = Transactions(
                 tenant_id = raw_msg.tenant_id,
                 raw_message_id = raw_msg.id,
                 amount=worker_context["extracted_amount"],  
                 currency=worker_context["extracted_currency"],
                 txn_type=worker_context["transaction_verb"],
-                txn_date=txn_date,
+                txn_date=worker_context["normalized_date"], # <-- Pulled safely from formal context
                 confidence=worker_context["extraction_confidence"],
                 status="PARSED", 
                 hash=content_hash,
@@ -321,9 +325,9 @@ def process_webhook_job(job: WebhookJobPayload) -> bool:
                 "amount": float(new_transaction.amount),  
                 "currency": new_transaction.currency,
                 "txn_type": new_transaction.txn_type,
+                "txn_date": new_transaction.txn_date.isoformat(), 
                 "confidence": new_transaction.confidence
             }))
-
         # ---------------------------------------------------------
         # --- FINALIZE TIMESTAMPS & UPDATE RAW MESSAGE ---
         # ---------------------------------------------------------

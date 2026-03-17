@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Optional, Dict, Any, Literal
 from pydantic import BaseModel, ValidationError, Field, field_validator
 
@@ -8,8 +9,8 @@ logger = logging.getLogger(__name__)
 class TransactionExtractionSchema(BaseModel):
     amount: Optional[float] = Field(None, gt=0.0, description="The monetary amount extracted")
     currency: Optional[str] = Field(None, min_length=3, max_length=3, description="The 3-letter currency code")
-    date: Optional[str] = Field(None, description="ISO 8601 date string.")
-    transaction_verb: Optional[Literal["credit", "debit"]] = Field(None, description="The type of transaction")
+    date: Optional[str] = Field(None, description="ISO 8601 date string (YYYY-MM-DD).")
+    transaction_verb: Optional[str] = Field(None, description="The type of transaction")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Extraction confidence")
 
     @field_validator("currency")
@@ -47,7 +48,8 @@ def parse_and_validate_gemini_response(raw_response: Optional[Dict[str, Any]]) -
         logger.info(json.dumps({
             "event_type": "ai_validation_success",
             "confidence": validated_data.confidence,
-            "transaction_verb": validated_data.transaction_verb
+            "transaction_verb": validated_data.transaction_verb,
+            "extracted_date": validated_data.date
         }))
 
         return validated_data

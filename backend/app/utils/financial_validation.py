@@ -1,4 +1,3 @@
-# backend/app/utils/financial_validation.py
 import logging
 from decimal import Decimal, InvalidOperation
 from typing import Optional
@@ -61,3 +60,23 @@ def normalize_currency_code(raw_currency: str | None, default_currency: str = "Z
         
     logger.warning(f"Currency Normalization Warning: Unrecognized format '{raw_currency}'. Defaulting to {default_currency}")
     return default_currency
+
+CREDIT_VERBS = {"credit", "received", "got", "credited", "reimbursed", "refunded", "income"}
+DEBIT_VERBS = {"debit", "paid", "sent", "transferred", "spent", "debited", "bought", "gave"}
+
+def normalize_transaction_verb(raw_verb: Optional[str]) -> Optional[str]:
+    """
+    Normalizes natural language financial verbs down to strictly 'credit' or 'debit'.
+    """
+    if not raw_verb:
+        return None
+        
+    cleaned_verb = raw_verb.strip().lower()
+    
+    if cleaned_verb in CREDIT_VERBS:
+        return "credit"
+    if cleaned_verb in DEBIT_VERBS:
+        return "debit"
+        
+    logger.warning(f"Unrecognized transaction verb extracted: '{raw_verb}'. Returning None.")
+    return None
