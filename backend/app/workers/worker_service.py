@@ -11,10 +11,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 from app.database.redis_client import get_redis_client, WEBHOOK_QUEUE_NAME, WEBHOOK_ACTIVE_QUEUE, WEBHOOK_DLQ_NAME
 from app.schemas.jobs import WebhookJobPayload
-from app.workers.job_handler import process_webhook_batch, RETRYABLE_EXCEPTIONS
+from app.workers.job_handler import process_webhook_job, RETRYABLE_EXCEPTIONS
 from app.config.logging_config import setup_logging
 from app.utils.backoff import apply_exponential_backoff
 from app.ai.config import AI_BATCH_SIZE, AI_BATCH_TIMEOUT_SECONDS
+from app.workers.job_handler import process_webhook_batch
 
 setup_logging()
 logger = logging.getLogger(__name__)
