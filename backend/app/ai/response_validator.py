@@ -11,7 +11,10 @@ class TransactionExtractionSchema(BaseModel):
     currency: Optional[str] = Field(None, min_length=3, max_length=3, description="The 3-letter currency code")
     date: Optional[str] = Field(None, description="ISO 8601 date string (YYYY-MM-DD).")
     transaction_verb: Optional[str] = Field(None, description="The type of transaction")
+    counterparty: Optional[str] = None 
+    reference: Optional[str] = None
     confidence: float = Field(..., ge=0.0, le=1.0, description="Extraction confidence")
+
 
     @field_validator("currency")
     def validate_currency(cls, v):

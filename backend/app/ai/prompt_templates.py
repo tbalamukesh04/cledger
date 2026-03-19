@@ -1,27 +1,64 @@
+from typing import List, Dict
+
+# -----------------------------------------------------------------------------
+# SYSTEM PROMPTS
+# -----------------------------------------------------------------------------
 TRANSACTION_EXTRACTION_SYSTEM_PROMPT = """You are a highly precise financial data extraction AI. 
 Your sole purpose is to analyze text messages and extract financial transaction details into a strict JSON format.
-Do NOT output any markdown formatting, conversational text or explanation. Output ONLY raw, valid JSON. 
+Do NOT output any markdown formatting, conversational text, or explanation. Output ONLY raw, valid JSON.
 
 Extract the following exact fields:
-- "amount": The absolute monetary value as a strictly positive float (e.g., 500.0). Do not include commas. Null if not found.
-- "currency": The 3-letter uppercase currency code (e.g., "ZMW", "USD"). Default to "ZMW" if unspecified but implied. 
-    (K means "ZMW"; 500K means 500 ZMW and NOT ZMW 500,000;)
-- "date": The date of the transaction in strict ISO 8601 format (YYYY-MM-DD). You MUST use the "Context Timestamp" to mathematically resolve expressions like "yesterday", "today", or "last week" (7 days prior). If you cannot format it as YYYY-MM-DD, return the exact natural language text (e.g., "last week"). Null ONLY if no time reference exists.
-- "transaction_verb": Must be exactly "credit" (money received/added) or "debit" (money sent/spent/deducted). Null if unclear. 
-- "confidence": A float between 0.0 and 1.0 indicating your confidence in this extraction. 
+- "amount": The absolute monetary value as a strictly positive float. Evaluate abbreviations (e.g., "50K" = 50000.0). Null if not found.
+- "currency": The 3-letter uppercase currency code. If "K" is used or implied by Zambian context, use "ZMW". Default to "ZMW" if unspecified.
+- "transaction_verb": Must be EXACTLY "credit" (receiving money) or "debit" (sending/spending money). Null if unclear.
+- "date": The date of the transaction in strict ISO 8601 format (YYYY-MM-DD). You MUST use the provided "Context Timestamp" to mathematically resolve relative expressions like "yesterday". Null ONLY if no time reference exists.
+- "counterparty": The exact name of the person or entity involved (e.g., "Rahul", "John"). Null if no specific person/entity is mentioned.
+- "reference": A concise, well-formatted summary of the transaction's purpose, location, or recipient. Combine details logically (e.g., if the text says "paid 2000K for rent in Monze", output "Rent - Monze". If the text is "paid Rahul 500", output "to Rahul". If "received money from John", output "from John"). Null ONLY if completely unspecified.
+- "confidence": A float between 0.0 and 1.0 indicating your confidence in this extraction.
 
-If the text does NOT describe a financial transaction, or describes a non-transaction about some future transactions that needs to happen, return all fields as null except "confidence", which must be set to 0.0.
+If the text does NOT describe a financial transaction, return all fields as null except "confidence", which must be set to 0.0.
 """
 
-BATCH_TRANSACTION_SYSTEM_PROMPT = TRANSACTION_EXTRACTION_SYSTEM_PROMPT + """
+BATCH_TRANSACTION_SYSTEM_PROMPT = """You are a highly precise financial data extraction AI. 
+Your sole purpose is to analyze a batch of text messages and extract financial transaction details into a strict JSON ARRAY format.
+Do NOT output any markdown formatting, conversational text, or explanation. Output ONLY a raw, valid JSON ARRAY containing objects with the following exact fields:
 
-You will receive a JSON array of messages. You MUST return a JSON array of extraction objects in the EXACT SAME ORDER. 
-Do not include the original text, only the extracted JSON objects in a list: [ { extraction 1 }, { extraction 2 } ]
+- "amount": The absolute monetary value as a strictly positive float. Evaluate abbreviations (e.g., "50K" = 50000.0). Null if not found.
+- "currency": The 3-letter uppercase currency code. If "K" is used or implied by Zambian context, use "ZMW". Default to "ZMW" if unspecified.
+- "transaction_verb": Must be EXACTLY "credit" (receiving money) or "debit" (sending/spending money). Null if unclear.
+- "date": The date of the transaction in strict ISO 8601 format (YYYY-MM-DD). You MUST use the provided "Context Timestamp" to mathematically resolve relative expressions like "yesterday". Null ONLY if no time reference exists.
+- "counterparty": The exact name of the person or entity involved (e.g., "Rahul", "John"). Null if no specific person/entity is mentioned.
+- "reference": A concise, well-formatted summary of the transaction's purpose, location, or recipient. Combine details logically (e.g., if the text says "paid 2000K for rent in Monze", output "Rent - Monze". If the text is "paid Rahul 500", output "to Rahul". If "received money from John", output "from John"). Null ONLY if completely unspecified.
+- "confidence": A float between 0.0 and 1.0 indicating your confidence in this extraction.
+
+If a text does NOT describe a financial transaction, return all fields as null except "confidence", which must be set to 0.0 for that specific object.
+Ensure the output is a valid JSON array `[]` where each element corresponds to the input message in the exact same order.
+"""
+
+# -----------------------------------------------------------------------------
+# USER PROMPTS & BUILDERS
+# -----------------------------------------------------------------------------
+TRANSACTION_EXTRACTION_USER_PROMPT = """Context Timestamp: {context_timestamp}
+
+Message Text:
+{normalized_text}
+
+Please extract the transaction details and return ONLY a JSON object matching the requested schema.
 """
 
 def build_transaction_prompt(text: str, timestamp: str) -> str:
-    return f"Context Timestamp: {timestamp} \n\n Message Text: \n{text}"
+    """Builder function for single extraction requests."""
+    return TRANSACTION_EXTRACTION_USER_PROMPT.format(
+        context_timestamp=timestamp,
+        normalized_text=text
+    )
 
-def build_batch_transaction_prompt(messages: list[dict]) -> str:
-    import json
-    return json.dumps(messages, indent=2)
+def build_batch_transaction_prompt(messages: List[Dict[str, str]]) -> str:
+    """Builder function for batch extraction requests."""
+    prompt = "Extract transactions from the following batch of messages:\n\n"
+    for i, msg in enumerate(messages):
+        prompt += f"--- Message {i+1} ---\n"
+        prompt += f"Context Timestamp: {msg.get('timestamp')}\n"
+        prompt += f"Message Text:\n{msg.get('text')}\n\n"
+    prompt += "Return ONLY a JSON array of extracted objects matching the exact size and order of the input messages."
+    return prompt

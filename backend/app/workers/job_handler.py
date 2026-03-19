@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 import os
 
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, Session 
 from sqlalchemy.exc import IntegrityError, OperationalError, DBAPIError
 import redis.exceptions
 
@@ -25,6 +25,7 @@ from app.utils.financial_validation import validate_and_convert_amount, normaliz
 from app.ai.batch_request_builder import build_batch_request_payload
 from app.parsing.scoring_engine import TransactionScorer
 from app.schemas.parsing_metadata import ParsingMetadata
+from app.ai.llm_extraction.extraction_service import LLMExtractionService
 from typing import List, Dict
 
 logger = logging.getLogger(__name__)
@@ -262,9 +263,8 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             return job_results
 
         # 3. AI EXTRACTION (Batch Call - Only for candidates)
-        parser = AIParser()
-        batch_request = build_batch_request_payload(candidates_for_ai)
-        extraction_results = parser.parse_batch(batch_request)
+        extraction_service = LLMExtractionService()
+        extraction_results = extraction_service.extract_transaction_batch(candidates_for_ai)
 
         # 4. Process Results and Stage DB Updates
         for idx, preprocessed_data in enumerate(candidates_for_ai):
@@ -282,7 +282,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 validated_amount = validate_and_convert_amount(extraction_result.amount)
                 normalized_currency = normalize_currency_code(extraction_result.currency)
                 confidence_score = extraction_result.confidence
-                raw_extracted_date = extraction_result.date
+                raw_extracted_date = extraction_result.transaction_date
                 raw_extracted_verb = extraction_result.transaction_verb
                 
             normalized_txn_verb = normalize_transaction_verb(raw_extracted_verb)
