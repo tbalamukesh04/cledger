@@ -20,6 +20,9 @@ class RawMessages(Base, TimestampMixin):
     processed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     is_transaction: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     hash: Mapped[str] = mapped_column(String(256), unique=True, nullable=False)
+    is_transaction: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    parsing_meta: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    hash: Mapped[str] = mapped_column(String(256), unique=True, nullable=False)
 
     processing_status: Mapped[str] = mapped_column(String(50), default = "pending", server_default = "pending", nullable=False)
     processing_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -29,4 +32,4 @@ class RawMessages(Base, TimestampMixin):
     group: Mapped[Optional["Groups"]] = relationship("Groups", back_populates="messages")
 
     def __repr__(self) -> str:
-        return f"<RawMessage(id={self.id}, whatsapp_message_id='{self.whatsapp_message_id}', processed={self.processed})>"
+        return f"<RawMessage(id={self.id}, whatsapp_message_id='{self.message_id}', processed={self.processed})>"

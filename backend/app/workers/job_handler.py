@@ -24,6 +24,7 @@ from app.utils.date_normalization import normalize_extracted_date
 from app.utils.financial_validation import validate_and_convert_amount, normalize_currency_code, normalize_transaction_verb
 from app.ai.batch_request_builder import build_batch_request_payload
 from app.parsing.scoring_engine import TransactionScorer
+from app.schemas.parsing_metadata import ParsingMetadata
 from typing import List, Dict
 
 logger = logging.getLogger(__name__)
@@ -119,6 +120,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
         candidates_for_ai = []
         valid_jobs_map = {}
         scorer = TransactionScorer()
+        scoring_context_map = {}
 
         # 2. Preprocess, Score, and Filter duplicates locally
         for job in jobs:
@@ -173,7 +175,63 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             # --- SCORING ENGINE INTEGRATION ---
             context = ProcessingContext(payload=preprocessed_payload)
             context = scorer.evaluate(context)
-            
+
+            parsing_meta_obj = ParsingMetadata(
+                score=context.scoring.total_score,
+                threshold=scorer.threshold,
+                is_transaction=context.scoring.is_transaction_candidate,
+                rule_breakdown=context.scoring.rule_breakdown
+            )
+
+            raw_msg.is_transaction = context.scoring.is_transaction_candidate
+            raw_msg.parsing_meta = parsing_meta_obj.to_jsonb()
+
+            logger.info(
+                "Message classification metadata generated",
+                extra={
+                    "event_type": "classification_metadata_staged",
+                    "raw_message_id": job.raw_message_id,
+                    "score": context.scoring.total_score,
+                    "threshold": scorer.threshold,
+                    "is_transaction": context.scoring.is_transaction_candidate,
+                    "db_update_status": "pending_commit"
+                }
+            )
+
+            if context.scoring.is_transaction_candidate:
+                candidates_for_ai.append(preprocessed_payload)
+                valid_jobs_map[raw_msg.id] = job
+
+            else:
+                raw_msg.processed = True
+                raw_msg.processing_status = "NON_TRANSACTION"
+                raw_msg.processing_started_at = processing_started_at
+                raw_msg.processing_completed_at = datetime.now(timezone.utc)
+                job_results[job.job_id] = "success"
+
+        try:
+            db.commit()
+            logger.info(
+                "Classification metadata successfully persisted to database",
+                extra={
+                    "event_type": "classification_metadata_committed",
+                    "batch_size": len(jobs),
+                    "db_update_status": "success"
+                }
+            )
+
+        except Exception as e:
+            db.rollback()
+            logger.error(
+                "Failed to persist classification metadata: {str(e)}", extra={"event_type": "metadata_commit_failed", "error": str(e)}
+            )
+            for job in jobs:
+                job_results[job.job_id] = "failure"
+            return job_results
+
+        if not candidates_for_ai:
+            return job_results
+
             # --- STRUCTURED LOGGING FOR SCORING ---
             logger.info(json.dumps({
                 "event_type": "scoring_decision",
@@ -230,6 +288,16 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             normalized_txn_verb = normalize_transaction_verb(raw_extracted_verb)
             extraction_status = "SUCCESS" if (validated_amount is not None and normalized_txn_verb is not None) else ("NON_TRANSACTION" if extraction_result else "AI_EXTRACTION_FAILED")
             normalized_txn_date = normalize_extracted_date(raw_extracted_date, preprocessed_data.normalized_timestamp)
+            current_meta = raw_msg.parsing_meta or {}
+            
+            current_meta["ai_extraction"] = {
+                "source": "gemini-2.5-flash",
+                "batch_processed": True,
+                "status": extraction_status,
+                "raw_ai_output": extraction_result.model_dump() if extraction_result else None
+            }
+
+            raw_msg.parsing_meta = current_meta
 
             if extraction_status == "SUCCESS":
                 new_transaction = Transactions(
@@ -242,7 +310,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                     confidence=confidence_score,
                     status="PARSED", 
                     hash=preprocessed_data.message_hash,
-                    parsing_meta={"source": "gemini-2.5-flash", "batch_processed": True, "raw_ai_output": extraction_result.model_dump() if extraction_result else None}
+                    parsing_meta=current_meta
                 )
                 db.add(new_transaction)
                 raw_msg.is_transaction = True
