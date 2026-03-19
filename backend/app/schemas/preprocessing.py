@@ -1,7 +1,6 @@
-# backend/app/schemas/preprocessing.py
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict
 
 class PreprocessedPayload(BaseModel):
     """
@@ -21,3 +20,23 @@ class PreprocessedPayload(BaseModel):
     normalized_text: Optional[str] = Field(None, description="Cleaned and standardized message text")
     message_hash: str = Field(..., description="SHA256 hash of the message content")
     idempotency_identifier: str = Field(..., description="Unique identifier for idempotency")
+
+class ScoringResult(BaseModel):
+    """
+    Stores the extracted boolean signals, rule breakdown, and the computed deterministic score.
+    """
+    amount_detected: bool = Field(default=False)
+    currency_detected: bool = Field(default=False)
+    date_detected: bool = Field(default=False)
+    transaction_verb_detected: bool = Field(default=False)
+    negative_context: bool = Field(default=False)
+    
+    rule_breakdown: Dict[str, int] = Field(default_factory=dict, description="Detailed breakdown of points awarded/deducted per rule")
+    total_score: int = Field(default=0, description="The computed score from the deterministic engine")
+    
+    is_transaction_candidate: bool = Field(default=False, description="True if total_score >= threshold. Determines if it goes to AI.")
+
+class ProcessingContext(BaseModel):
+    """Wraps the preprocessed payload and subsequent pipeline results like scoring."""
+    payload: PreprocessedPayload 
+    scoring: Optional[ScoringResult] = None

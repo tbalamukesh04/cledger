@@ -1,3 +1,4 @@
+# backend/app/workers/job_handler.py
 import logging
 import hashlib
 import json
@@ -9,7 +10,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError, DBAPIError
 import redis.exceptions
 
 from app.schemas.jobs import WebhookJobPayload
-from app.schemas.preprocessing import PreprocessedPayload
+from app.schemas.preprocessing import PreprocessedPayload, ProcessingContext
 from app.database.database import SessionLocal
 from app.models.raw_messages import RawMessages
 from app.models.groups import Groups
@@ -22,6 +23,7 @@ from app.models.transactions import Transactions
 from app.utils.date_normalization import normalize_extracted_date
 from app.utils.financial_validation import validate_and_convert_amount, normalize_currency_code, normalize_transaction_verb
 from app.ai.batch_request_builder import build_batch_request_payload
+from app.parsing.scoring_engine import TransactionScorer
 from typing import List, Dict
 
 logger = logging.getLogger(__name__)
@@ -114,10 +116,11 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
 
         raw_msg_map = {msg.id: msg for msg in raw_messages}
         
-        preprocessed_batch = []
+        candidates_for_ai = []
         valid_jobs_map = {}
+        scorer = TransactionScorer()
 
-        # 2. Preprocess and filter duplicates locally
+        # 2. Preprocess, Score, and Filter duplicates locally
         for job in jobs:
             raw_msg = raw_msg_map.get(job.raw_message_id)
             if not raw_msg:
@@ -151,7 +154,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             group_whatsapp_id = raw_msg.group.group_id if raw_msg.group else None
             group_name = raw_msg.group.groupname if raw_msg.group else None
             
-            preprocessed_data = PreprocessedPayload(
+            preprocessed_payload = PreprocessedPayload(
                 raw_message_id=raw_msg.id,
                 participant_id=raw_msg.sender_id,
                 sender_phone=sender_phone,
@@ -166,20 +169,47 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 message_hash=content_hash,
                 idempotency_identifier=idempotency_key
             )
-            preprocessed_batch.append(preprocessed_data)
-            valid_jobs_map[job.raw_message_id] = job
+            
+            # --- SCORING ENGINE INTEGRATION ---
+            context = ProcessingContext(payload=preprocessed_payload)
+            context = scorer.evaluate(context)
+            
+            # --- STRUCTURED LOGGING FOR SCORING ---
+            logger.info(json.dumps({
+                "event_type": "scoring_decision",
+                "raw_message_id": raw_msg.id,
+                "job_id": job.job_id,
+                "total_score": context.scoring.total_score,
+                "is_transaction_candidate": context.scoring.is_transaction_candidate,
+                "negative_context": context.scoring.negative_context,
+                "rule_breakdown": context.scoring.rule_breakdown
+            }))
 
-        if not preprocessed_batch:
+            # --- ROUTING DECISION ---
+            if context.scoring.is_transaction_candidate:
+                # Passes threshold: Route to AI Extraction Batch
+                candidates_for_ai.append(preprocessed_payload)
+                valid_jobs_map[job.raw_message_id] = job
+            else:
+                # Fails threshold: Bypass AI, mark as complete non-transaction
+                raw_msg.processed = True
+                raw_msg.processing_status = "NON_TRANSACTION"
+                raw_msg.processing_started_at = processing_started_at
+                raw_msg.processing_completed_at = datetime.now(timezone.utc)
+                job_results[job.job_id] = "success"
+
+        # If no messages passed the scoring threshold, commit and exit early
+        if not candidates_for_ai:
             db.commit()
             return job_results
 
-        # 3. AI EXTRACTION (Batch Call)
+        # 3. AI EXTRACTION (Batch Call - Only for candidates)
         parser = AIParser()
-        batch_request = build_batch_request_payload(preprocessed_batch)
+        batch_request = build_batch_request_payload(candidates_for_ai)
         extraction_results = parser.parse_batch(batch_request)
 
         # 4. Process Results and Stage DB Updates
-        for idx, preprocessed_data in enumerate(preprocessed_batch):
+        for idx, preprocessed_data in enumerate(candidates_for_ai):
             raw_msg = raw_msg_map[preprocessed_data.raw_message_id]
             job = valid_jobs_map[preprocessed_data.raw_message_id]
             extraction_result = extraction_results[idx]
@@ -231,7 +261,8 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             db.commit()
             logger.info(json.dumps({
                 "event_type": "batch_processing_completed",
-                "batch_size": len(preprocessed_batch),
+                "batch_size_sent_to_ai": len(candidates_for_ai),
+                "total_jobs_processed": len(jobs),
                 "worker_identifier": WORKER_IDENTIFIER
             }))
         except IntegrityError as e:
