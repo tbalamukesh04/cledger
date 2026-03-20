@@ -1,9 +1,11 @@
-# backend/app/workers/job_handler.py
 import logging
 import hashlib
 import json
+import time
+import uuid
 from datetime import datetime, timezone
 import os
+from typing import List, Dict
 
 from sqlalchemy.orm import joinedload, Session 
 from sqlalchemy.exc import IntegrityError, OperationalError, DBAPIError
@@ -25,8 +27,8 @@ from app.utils.financial_validation import validate_and_convert_amount, normaliz
 from app.ai.batch_request_builder import build_batch_request_payload
 from app.parsing.scoring_engine import TransactionScorer
 from app.schemas.parsing_metadata import ParsingMetadata
-from app.ai.llm_extraction.extraction_service import LLMExtractionService
-from typing import List, Dict
+from app.ai.llm_extraction.extraction_service import process_extraction_batch
+from app.ai.batch_response_parser import parse_batch_response
 
 logger = logging.getLogger(__name__)
 
@@ -199,56 +201,11 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 }
             )
 
-            if context.scoring.is_transaction_candidate:
-                candidates_for_ai.append(preprocessed_payload)
-                valid_jobs_map[raw_msg.id] = job
-
-            else:
-                raw_msg.processed = True
-                raw_msg.processing_status = "NON_TRANSACTION"
-                raw_msg.processing_started_at = processing_started_at
-                raw_msg.processing_completed_at = datetime.now(timezone.utc)
-                job_results[job.job_id] = "success"
-
-        try:
-            db.commit()
-            logger.info(
-                "Classification metadata successfully persisted to database",
-                extra={
-                    "event_type": "classification_metadata_committed",
-                    "batch_size": len(jobs),
-                    "db_update_status": "success"
-                }
-            )
-
-        except Exception as e:
-            db.rollback()
-            logger.error(
-                "Failed to persist classification metadata: {str(e)}", extra={"event_type": "metadata_commit_failed", "error": str(e)}
-            )
-            for job in jobs:
-                job_results[job.job_id] = "failure"
-            return job_results
-
-        if not candidates_for_ai:
-            return job_results
-
-            # --- STRUCTURED LOGGING FOR SCORING ---
-            logger.info(json.dumps({
-                "event_type": "scoring_decision",
-                "raw_message_id": raw_msg.id,
-                "job_id": job.job_id,
-                "total_score": context.scoring.total_score,
-                "is_transaction_candidate": context.scoring.is_transaction_candidate,
-                "negative_context": context.scoring.negative_context,
-                "rule_breakdown": context.scoring.rule_breakdown
-            }))
-
             # --- ROUTING DECISION ---
             if context.scoring.is_transaction_candidate:
                 # Passes threshold: Route to AI Extraction Batch
                 candidates_for_ai.append(preprocessed_payload)
-                valid_jobs_map[job.raw_message_id] = job
+                valid_jobs_map[raw_msg.id] = job
             else:
                 # Fails threshold: Bypass AI, mark as complete non-transaction
                 raw_msg.processed = True
@@ -263,14 +220,50 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             return job_results
 
         # 3. AI EXTRACTION (Batch Call - Only for candidates)
-        extraction_service = LLMExtractionService()
-        extraction_results = extraction_service.extract_transaction_batch(candidates_for_ai)
+        batch_id = str(uuid.uuid4())
+        candidate_ids = [str(c.raw_message_id) for c in candidates_for_ai]
+        
+        logger.info(json.dumps({
+            "event_type": "batch_extraction_started",
+            "batch_id": batch_id,
+            "batch_size": len(candidates_for_ai),
+            "message_ids": candidate_ids
+        }))
 
-        # 4. Process Results and Stage DB Updates
-        for idx, preprocessed_data in enumerate(candidates_for_ai):
+        extraction_start_time = time.time()
+        gemini_response_status = "success"
+        extracted_data_map = {}
+
+        try:
+            # Execute Batch LLM Request using the new function
+            raw_llm_response = process_extraction_batch(candidates_for_ai)
+            extraction_latency = round(time.time() - extraction_start_time, 3)
+            
+            # Parse Batch Response mapping strictly by ID
+            extracted_data_map = parse_batch_response(raw_llm_response, candidate_ids)
+            
+        except Exception as e:
+            extraction_latency = round(time.time() - extraction_start_time, 3)
+            gemini_response_status = f"failed: {str(e)}"
+            logger.error(f"Batch {batch_id} AI extraction failed completely: {e}")
+
+        # STRUCTURED LOGGING FOR EXTRACTION LATENCY
+        logger.info(json.dumps({
+            "event_type": "batch_extraction_completed",
+            "batch_id": batch_id,
+            "batch_size": len(candidates_for_ai),
+            "message_ids": candidate_ids,
+            "extraction_latency_seconds": extraction_latency,
+            "gemini_response_status": gemini_response_status
+        }))
+
+        # 4. Process Results and Stage DB Updates mapped securely by ID
+        for preprocessed_data in candidates_for_ai:
             raw_msg = raw_msg_map[preprocessed_data.raw_message_id]
             job = valid_jobs_map[preprocessed_data.raw_message_id]
-            extraction_result = extraction_results[idx]
+            
+            # Safely fetch result via string ID
+            extraction_result = extracted_data_map.get(str(preprocessed_data.raw_message_id))
 
             validated_amount = None
             normalized_currency = "ZMW"
@@ -282,7 +275,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 validated_amount = validate_and_convert_amount(extraction_result.amount)
                 normalized_currency = normalize_currency_code(extraction_result.currency)
                 confidence_score = extraction_result.confidence
-                raw_extracted_date = extraction_result.transaction_date
+                raw_extracted_date = getattr(extraction_result, "transaction_date", getattr(extraction_result, "date", None))
                 raw_extracted_verb = extraction_result.transaction_verb
                 
             normalized_txn_verb = normalize_transaction_verb(raw_extracted_verb)
@@ -293,6 +286,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             current_meta["ai_extraction"] = {
                 "source": "gemini-2.5-flash",
                 "batch_processed": True,
+                "batch_id": batch_id,
                 "status": extraction_status,
                 "raw_ai_output": extraction_result.model_dump() if extraction_result else None
             }
@@ -322,7 +316,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             raw_msg.processing_started_at = processing_started_at
             raw_msg.processing_completed_at = datetime.now(timezone.utc)
             
-            job_results[job.job_id] = "success"
+            job_results[job.job_id] = "success" if extraction_status != "AI_EXTRACTION_FAILED" else "dlq"
 
         # 5. Commit whole batch
         try:

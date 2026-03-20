@@ -13,12 +13,9 @@ def parse_batch_response(
 ) -> Dict[str, Optional[TransactionExtractionSchema]]:
     """
     Parses a batched Gemini response, mapping each extracted transaction 
-    back to its originating message ID.
-    
-    Returns:
-        Dict mapping string message IDs to their validated Pydantic schema (or None if failed).
+    back to its originating message ID using explicit ID keys.
     """
-    # Initialize the results map with None for all expected IDs
+    # 1. Initialize the results map with None so we can track missed extractions
     results_map = {msg_id: None for msg_id in original_ids}
     
     if not raw_response:
@@ -41,29 +38,37 @@ def parse_batch_response(
             
         parsed_json_array = json.loads(cleaned_text.strip())
         
-        # Guard against hallucinated structures (e.g., returning an object instead of a list)
-        if not isinstance(parsed_json_array, list) or len(parsed_json_array) != len(original_ids):
-            logger.error("Batch response length mismatch or invalid root format.")
+        if not isinstance(parsed_json_array, list):
+            logger.error("Batch response valid JSON, but not a root list/array.")
             return results_map
             
-        # Independently validate each item in the batch
-        for idx, item in enumerate(parsed_json_array):
-            msg_id = original_ids[idx]
+        # 2. Iterate and map explicitly by ID, ignoring array order
+        for item in parsed_json_array:
+            # Extract the ID provided by the LLM
+            extracted_id = item.get("id")
+            
+            if not extracted_id or str(extracted_id) not in results_map:
+                logger.warning(f"LLM returned an unknown or missing ID. Item: {item}")
+                continue
+            
+            # Remove the ID so the rest of the dictionary matches your strict Pydantic schema
+            item_payload = {k: v for k, v in item.items() if k != "id"}
+
             try:
-                validated_data = TransactionExtractionSchema(**item)
-                results_map[msg_id] = validated_data
+                validated_data = TransactionExtractionSchema(**item_payload)
+                results_map[str(extracted_id)] = validated_data
             except ValidationError as e:
-                # If one item fails validation, the rest of the batch survives
+                # If one item fails validation, log it. It remains None in results_map.
                 logger.warning(json.dumps({
                     "event_type": "batch_item_validation_error",
-                    "message_id": msg_id,
+                    "message_id": extracted_id,
                     "error": str(e)
                 }))
                 
         return results_map
         
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to decode batch JSON: {str(e)}")
+        logger.error(f"Failed to decode batch JSON: {str(e)}\nRaw Text: {raw_text}")
         return results_map
     except Exception as e:
         logger.error(f"Batch parsing execution error: {str(e)}", exc_info=True)

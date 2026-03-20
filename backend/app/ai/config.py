@@ -9,7 +9,7 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 AI_BATCH_SIZE = int(os.getenv("AI_BATCH_SIZE", 10))
-
+MAX_BATCH_PAYLOAD_SIZE = int(os.getenv("MAX_BATCH_PAYLOAD_SIZE", 50))
 AI_BATCH_TIMEOUT_SECONDS = int(os.getenv("AI_BATCH_TIMEOUT_SECONDS", 5))
 
 SCORING_WEIGHTS = {
