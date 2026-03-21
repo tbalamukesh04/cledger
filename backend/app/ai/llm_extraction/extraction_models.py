@@ -15,7 +15,7 @@ class TransactionExtractionResult(BaseModel):
     reference: Optional[str] = Field(None, description="Contextual note or reference for the transaction")
     confidence: float = Field(0.0, ge=0.0, le=1.0, description="AI extraction confidence score")
     model_version: str = Field(..., description="The Gemini model version utilized")
-    prompt_version: str = Field(..., description="The prompt template version utilized")
+    prompt_version: Optional[str] = Field(None, description="The prompt template version utilized")
 
     def to_dict(self) -> dict:
         return self.model_dump(mode='json')

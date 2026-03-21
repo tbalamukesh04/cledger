@@ -8,11 +8,16 @@ from app.schemas.llm_extraction import LLMExtractionSchema
 logger = logging.getLogger(__name__)
 
 def parse_batch_response(
-    raw_response: Optional[Dict[str, Any]], 
+    service_response: Dict[str, Any], # Changed to receive dict containing response + metadata
     original_ids: List[str],
     batch_id: str
 ) -> Dict[str, Optional[LLMExtractionSchema]]:
     
+    # 1. Unpack the response and metadata injected by extraction_service
+    raw_response = service_response.get("raw_response", {})
+    metadata = service_response.get("metadata", {})
+    prompt_version = metadata.get("prompt_version")
+
     results_map = {msg_id: None for msg_id in original_ids}
     
     if not raw_response:
@@ -45,12 +50,27 @@ def parse_batch_response(
                 logger.warning(f"LLM returned an unknown or missing ID. Item: {item}")
                 continue
             
-            validated_data = validate_extraction_item(item, batch_id)
-            results_map[str(extracted_id)] = validated_data
+            # 2. INJECT PROMPT VERSION before passing to your validation utility
+            item["prompt_version"] = prompt_version
+            
+            try:
+                # 3. Validate item
+                validated_data = validate_extraction_item(item, batch_id)
+                results_map[str(extracted_id)] = validated_data
+            except Exception as item_error:
+                # BLAST RADIUS CONTAINMENT:
+                # Catch item-specific validation errors (e.g., missing currency field)
+                # Map remains None for this ID, triggering routing to the DLQ in job_handler
+                logger.error(
+                    f"Item-level validation failed in batch {batch_id}. Item ID: {extracted_id}. Routing to DLQ.", 
+                    exc_info=True
+                )
                 
         return results_map
         
     except json.JSONDecodeError as e:
+        # MALFORMED JSON ESCALATION:
+        # Array was truncated. Raise ValueError to trigger a full batch retry with backoff.
         logger.error(json.dumps({
             "event_type": "llm_malformed_json_error",
             "error": str(e),

@@ -12,6 +12,8 @@ AI_BATCH_SIZE = int(os.getenv("AI_BATCH_SIZE", 10))
 MAX_BATCH_PAYLOAD_SIZE = int(os.getenv("MAX_BATCH_PAYLOAD_SIZE", 50))
 AI_BATCH_TIMEOUT_SECONDS = int(os.getenv("AI_BATCH_TIMEOUT_SECONDS", 5))
 
+ACTIVE_PROMPT_VERSION = os.getenv("ACTIVE_PROMPT_VERSION", "v1.1")
+
 SCORING_WEIGHTS = {
     "amount_detected":           2,
     "currency_detected":         2,

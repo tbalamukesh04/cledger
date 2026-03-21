@@ -1,27 +1,20 @@
+from pydantic import BaseModel, Field, StrictStr, StrictFloat, field_validator
+from typing import Optional
 import re
-from typing import Optional, Literal, Union
-from pydantic import BaseModel, Field, field_validator, StrictStr, StrictFloat, StrictInt
 
 class LLMExtractionSchema(BaseModel):
-    """
-    Strict validation schema for the incoming LLM JSON payload.
-    Uses Strict types to prevent silent implicit casting (e.g. converting ints to strings).
-    """
-    id: StrictStr = Field(..., description="Originating raw_message_id for batch mapping")
-    
-    # Amount and Confidence must be numeric (accepting both strictly typed ints and floats)
-    amount: Optional[Union[StrictFloat, StrictInt]] = Field(..., ge=0.0, description="The monetary amount extracted")
-    confidence: Union[StrictFloat, StrictInt] = Field(..., ge=0.0, le=1.0, description="Extraction confidence score")
-    
-    # Text fields must be strictly strings, preventing list/dict/int hallucinations
-    currency: Optional[StrictStr] = Field(..., min_length=3, max_length=3, description="The 3-letter currency code")
-    transaction_verb: Optional[Literal["credit", "debit"]] = Field(..., description="The type of transaction")
-    transaction_date: Optional[StrictStr] = Field(..., alias="date", description="ISO 8601 date string (YYYY-MM-DD)")
-    counterparty: Optional[StrictStr] = Field(..., description="The counterparty of the transaction")
-    reference: Optional[StrictStr] = Field(..., description="The reference of the transaction")
-
-    # --- Fallback / Coercion Handlers
-
+    id: int
+    amount: Optional[StrictFloat] = None
+    currency: Optional[StrictStr] = None
+    transaction_verb: Optional[StrictStr] = None
+    transaction_date: Optional[StrictStr] = Field(None, alias="transaction_date")
+    counterparty: Optional[StrictStr] = None
+    reference: Optional[StrictStr] = None
+    confidence: StrictFloat
+    prompt_version: Optional[str] = Field(
+        default=None, 
+        description="The version of the system prompt used to generate this extraction."
+    )
     @field_validator("amount", mode="before")
     def clean_amount(cls, v):
         """Forgives LLM if it returns a string with commas/symbols, safely coercing to a numeric float."""

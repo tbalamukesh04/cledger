@@ -293,8 +293,20 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 "batch_processed": True,
                 "batch_id": batch_id,
                 "status": extraction_status,
+                "prompt_version": getattr(extraction_result, "prompt_version", None) if extraction_result else None,
                 "raw_ai_output": extraction_result.model_dump() if extraction_result else None
             }
+
+            logger.info(
+                    json.dumps({
+                        "event_type": "prompt_version_usage",
+                        "raw_message_id": preprocessed_data.raw_message_id,
+                        "prompt_version": extraction_result.prompt_version,
+                        "model_version": "gemini-2.5-flash",
+                        "extraction_timestamp": datetime.now(timezone.utc).isoformat(),
+                        "status": extraction_status
+                    })
+                )
 
             raw_msg.parsing_meta = current_meta
 
