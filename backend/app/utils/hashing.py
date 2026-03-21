@@ -1,6 +1,23 @@
 import hashlib
 from datetime import datetime
 
+def generate_text_hash(text: str | None) -> str:
+    """
+    Generates a deterministic SHA256 hash based on the normalized message 
+    content.
+    
+    Args:
+        text (str | None): The cleaned, normalized message text.
+        
+    Returns:
+        str: A 64-character SHA256 hex digest.
+    """
+    # Safely handle empty or media-only messages where text might be None
+    safe_text = text if text is not None else ""
+    
+    # Generate and return the hash
+    return hashlib.sha256(safe_text.encode('utf-8')).hexdigest()
+
 def generate_content_hash(text: str | None, timestamp: datetime) -> str:
     """
     Generates a deterministic SHA256 hash based on the normalized message 

@@ -19,6 +19,7 @@ class PreprocessedPayload(BaseModel):
     message_type: str = Field(..., description="The type of webhook event (e.g., text, image)")
     normalized_text: Optional[str] = Field(None, description="Cleaned and standardized message text")
     message_hash: str = Field(..., description="SHA256 hash of the message content")
+    text_hash: str = Field(..., description="SHA256 hash of the normalized text")
     idempotency_identifier: str = Field(..., description="Unique identifier for idempotency")
 
 class ScoringResult(BaseModel):

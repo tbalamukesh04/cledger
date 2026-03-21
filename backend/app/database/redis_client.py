@@ -13,6 +13,9 @@ WEBHOOK_QUEUE_NAME = "cledger:webhook_processing_queue"
 WEBHOOK_ACTIVE_QUEUE = "cledger:webhook_active_queue"
 WEBHOOK_DLQ_NAME = "cledger:webhook_dead_letter_queue"
 
+EXTRACTION_CACHE_PREFIX = "cledger:extraction_cache:"
+EXTRACTION_CACHE_TTL = 86400 * 30
+
 def get_redis_client() -> redis.Redis:
     """
     Initializes and returns a Redis client.

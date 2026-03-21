@@ -19,7 +19,7 @@ from app.models.groups import Groups
 from app.models.participants import Participants
 from app.utils.text_processing import normalize_whatsapp_text
 from app.utils.datetime_utils import convert_epoch_to_utc_datetime
-from app.utils.hashing import generate_content_hash
+from app.utils.hashing import generate_content_hash, generate_text_hash
 from app.ai.ai_parser import AIParser
 from app.models.transactions import Transactions
 from app.utils.date_normalization import normalize_extracted_date
@@ -29,6 +29,7 @@ from app.parsing.scoring_engine import TransactionScorer
 from app.schemas.parsing_metadata import ParsingMetadata
 from app.ai.llm_extraction.extraction_service import process_extraction_batch
 from app.ai.batch_response_parser import parse_batch_response
+from app.ai.extraction_cache import get_cached_extractions_batch, cache_extraction_result
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             final_timestamp = normalized_timestamp or raw_msg.received_at or job.message_timestamp
             
             content_hash = generate_content_hash(normalized_text, final_timestamp)
+            text_hash = generate_text_hash(normalized_text)
             is_native_wamid = raw_msg.message_id and raw_msg.message_id.startswith("wamid.")
             idempotency_key = raw_msg.message_id if is_native_wamid else f"idem_content_{content_hash}"
 
@@ -172,6 +174,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 message_type=job.webhook_event_type,
                 normalized_text=normalized_text,
                 message_hash=content_hash,
+                text_hash=text_hash,
                 idempotency_identifier=idempotency_key
             )
             
@@ -221,46 +224,81 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
 
         # 3. AI EXTRACTION (Batch Call - Only for candidates)
         batch_id = str(uuid.uuid4())
-        candidate_ids = [str(c.raw_message_id) for c in candidates_for_ai]
-        
-        logger.info(json.dumps({
-            "event_type": "batch_extraction_started",
-            "batch_id": batch_id,
-            "batch_size": len(candidates_for_ai),
-            "message_ids": candidate_ids
-        }))
 
-        extraction_start_time = time.time()
-        gemini_response_status = "success"
+        candidates_for_ai_misses = []
         extracted_data_map = {}
+
+        text_hashes = [c.text_hash for c in candidates_for_ai]
+        cache_lookups = get_cached_extractions_batch(text_hashes)
+
+        for preprocessed_data in candidates_for_ai:
+            cached_schema = cache_lookups.get(preprocessed_data.text_hash)
+            if cached_schema:
+                logger.info(json.dumps({
+                    "event_type": "extraction_cache_lookup",
+                    "raw_message_id": str(preprocessed_data.raw_message_id),
+                    "message_hash": preprocessed_data.text_hash,
+                    "cache_status": "hit",
+                    "extraction_source": "cache",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }))
+                extracted_data_map[str(preprocessed_data.raw_message_id)] = cached_schema
+            else:
+                logger.info(json.dumps({
+                    "event_type": "extraction_cache_lookup",
+                    "raw_message_id": str(preprocessed_data.raw_message_id),
+                    "message_hash": preprocessed_data.text_hash,
+                    "cache_status": "miss",
+                    "extraction_source": "LLM",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }))
+                candidates_for_ai_misses.append(preprocessed_data)
         batch_failed = False
 
-        try:
-            # Execute Batch LLM Request using the new function
-            raw_llm_response = process_extraction_batch(candidates_for_ai)
-            extraction_latency = round(time.time() - extraction_start_time, 3)
-            
-            # Parse Batch Response mapping strictly by ID
-            extracted_data_map = parse_batch_response(raw_llm_response, candidate_ids, batch_id)
-            
-        except Exception as e:
-            extraction_latency = round(time.time() - extraction_start_time, 3)
-            gemini_response_status = f"failed: {str(e)}"
-            logger.error(f"Batch {batch_id} AI extraction failed completely: {e}")
-            batch_failed = True
+        if candidates_for_ai_misses:
+            candidate_miss_ids = [str(c.raw_message_id) for c in candidates_for_ai_misses]
+            miss_hash_map = {str(c.raw_message_id): c.text_hash for c in candidates_for_ai_misses}
 
-        # STRUCTURED LOGGING FOR EXTRACTION LATENCY
-        logger.info(json.dumps({
-            "event_type": "batch_extraction_completed",
-            "batch_id": batch_id,
-            "batch_size": len(candidates_for_ai),
-            "message_ids": candidate_ids,
-            "extraction_latency_seconds": extraction_latency,
-            "gemini_response_status": gemini_response_status
-        }))
+            logger.info(json.dumps({
+                "event_type": "batch_extraction_misses",
+                "batch_id": batch_id,
+                "batch_size": len(candidates_for_ai_misses),
+                "message_ids": candidate_miss_ids
+            }))
 
-        # 4. Process Results and Stage DB Updates mapped securely by ID
-        for preprocessed_data in candidates_for_ai:
+            extraction_start_time = time.time()
+            gemini_response_status = "success"
+
+            try:
+                raw_llm_response = process_extraction_batch(candidates_for_ai_misses)
+                extraction_latency = round(time.time() - extraction_start_time, 3)
+                llm_extracted_data = parse_batch_response(raw_llm_response, candidate_miss_ids, batch_id)
+                extracted_data_map.update(llm_extracted_data)
+                for msg_id, ext_result in llm_extracted_data.items():
+                    if ext_result:
+                        text_hash = miss_hash_map.get(msg_id)
+                        if text_hash:
+                            cache_extraction_result(text_hash, ext_result)
+                            logger.info(json.dumps({
+                                "event_type": "extraction_cache_hit",
+                                "raw_message_id": msg_id,
+                                "text_hash": text_hash,
+                            }))
+            except Exception as e:
+                extraction_latency = round(time.time() - extraction_start_time, 3)
+                gemini_response_status = f"failed: {str(e)}"
+                logger.error(f"Batch {batch_id} AI extraction failed completely: {e}")
+                batch_failed = True
+
+            logger.info(json.dumps({
+                "event_type": "batch_extraction_completed",
+                "batch_id": batch_id,
+                "batch_size": len(candidates_for_ai_misses),
+                "message_ids": candidate_miss_ids,
+                "extraction_latency_seconds": extraction_latency,
+                "gemini_response_status": gemini_response_status
+            }))
+
             raw_msg = raw_msg_map[preprocessed_data.raw_message_id]
             job = valid_jobs_map[preprocessed_data.raw_message_id]
             
