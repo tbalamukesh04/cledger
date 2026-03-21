@@ -284,6 +284,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                                 "raw_message_id": msg_id,
                                 "text_hash": text_hash,
                             }))
+
             except Exception as e:
                 extraction_latency = round(time.time() - extraction_start_time, 3)
                 gemini_response_status = f"failed: {str(e)}"
@@ -299,12 +300,14 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 "gemini_response_status": gemini_response_status
             }))
 
+        for preprocessed_data in candidates_for_ai:
             raw_msg = raw_msg_map[preprocessed_data.raw_message_id]
             job = valid_jobs_map[preprocessed_data.raw_message_id]
             
             if batch_failed: 
                 job_results[job.job_id] = "retry"
                 continue
+            
             # Safely fetch result via string ID
             extraction_result = extracted_data_map.get(str(preprocessed_data.raw_message_id))
 
@@ -317,7 +320,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             if extraction_result:
                 validated_amount = validate_and_convert_amount(extraction_result.amount)
                 normalized_currency = normalize_currency_code(extraction_result.currency)
-                confidence_score = extraction_result.confidence
+                confidence_score = extraction_result.confidence_score
                 raw_extracted_date = getattr(extraction_result, "transaction_date", getattr(extraction_result, "date", None))
                 raw_extracted_verb = extraction_result.transaction_verb
                 
@@ -328,23 +331,27 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             
             current_meta["ai_extraction"] = {
                 "source": "gemini-2.5-flash",
+                "model": "gemini-2.5-flash", 
                 "batch_processed": True,
                 "batch_id": batch_id,
                 "status": extraction_status,
+                "confidence_score": confidence_score if extraction_result else 0.0,
                 "prompt_version": getattr(extraction_result, "prompt_version", None) if extraction_result else None,
                 "raw_ai_output": extraction_result.model_dump() if extraction_result else None
             }
 
             logger.info(
-                    json.dumps({
-                        "event_type": "prompt_version_usage",
-                        "raw_message_id": preprocessed_data.raw_message_id,
-                        "prompt_version": extraction_result.prompt_version,
-                        "model_version": "gemini-2.5-flash",
-                        "extraction_timestamp": datetime.now(timezone.utc).isoformat(),
-                        "status": extraction_status
-                    })
-                )
+                json.dumps({
+                    "event_type": "extraction_confidence_scored",
+                    "raw_message_id": preprocessed_data.raw_message_id,
+                    "message_hash": preprocessed_data.message_hash,
+                    "extraction_confidence": confidence_score,
+                    "prompt_version": getattr(extraction_result, "prompt_version", None) if extraction_result else None,
+                    "model_version": "gemini-2.5-flash",
+                    "extraction_timestamp": datetime.now(timezone.utc).isoformat(),
+                    "status": extraction_status
+                })
+            )
 
             raw_msg.parsing_meta = current_meta
 

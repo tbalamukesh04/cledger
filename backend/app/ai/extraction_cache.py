@@ -60,7 +60,7 @@ def cache_extraction_result(text_hash: str, extraction_result: LLMExtractionSche
             "extraction_result": extraction_result.model_dump(mode='json'),
             "prompt_version": getattr(extraction_result, "prompt_version", None),
             "model_version": "gemini-2.5-flash",
-            "confidence": extraction_result.confidence,
+            "confidence": extraction_result.confidence_score,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
         redis_client.setex(cache_key, EXTRACTION_CACHE_TTL, json.dumps(cache_payload))

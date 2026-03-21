@@ -51,6 +51,9 @@ def parse_batch_response(
                 continue
             
             # 2. INJECT PROMPT VERSION before passing to your validation utility
+            if "confidence" not in item and "confidence_score" not in item:
+                item["confidence_score"] = 0.0
+
             item["prompt_version"] = prompt_version
             
             try:
@@ -58,9 +61,6 @@ def parse_batch_response(
                 validated_data = validate_extraction_item(item, batch_id)
                 results_map[str(extracted_id)] = validated_data
             except Exception as item_error:
-                # BLAST RADIUS CONTAINMENT:
-                # Catch item-specific validation errors (e.g., missing currency field)
-                # Map remains None for this ID, triggering routing to the DLQ in job_handler
                 logger.error(
                     f"Item-level validation failed in batch {batch_id}. Item ID: {extracted_id}. Routing to DLQ.", 
                     exc_info=True
@@ -69,8 +69,6 @@ def parse_batch_response(
         return results_map
         
     except json.JSONDecodeError as e:
-        # MALFORMED JSON ESCALATION:
-        # Array was truncated. Raise ValueError to trigger a full batch retry with backoff.
         logger.error(json.dumps({
             "event_type": "llm_malformed_json_error",
             "error": str(e),

@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, StrictStr, StrictFloat, field_validator
 from typing import Optional
 import re
+from app.utils.confidence_normalization import normalize_confidence
 
 class LLMExtractionSchema(BaseModel):
     id: int
@@ -10,7 +11,11 @@ class LLMExtractionSchema(BaseModel):
     transaction_date: Optional[StrictStr] = Field(None, alias="transaction_date")
     counterparty: Optional[StrictStr] = None
     reference: Optional[StrictStr] = None
-    confidence: StrictFloat
+    confidence_score : float = Field(
+        ...,
+        alias="confidence",
+        description="Normalized confidence score representing LLM confidence"
+    )
     prompt_version: Optional[str] = Field(
         default=None, 
         description="The version of the system prompt used to generate this extraction."
@@ -55,3 +60,9 @@ class LLMExtractionSchema(BaseModel):
             if not re.match(r"^\d{4}-\d{2}-\d{2}$", v):
                 raise ValueError(f"Date must be in string YYYY-MM-DD format, got: {v}")
         return v
+
+    @field_validator("confidence_score", mode="before")
+    def clean_confidence(cls, v):
+        """Normalizes the confidence score to a float between 0 and 1."""
+        return normalize_confidence(v)
+        

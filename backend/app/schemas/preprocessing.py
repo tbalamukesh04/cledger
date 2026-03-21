@@ -41,3 +41,7 @@ class ProcessingContext(BaseModel):
     """Wraps the preprocessed payload and subsequent pipeline results like scoring."""
     payload: PreprocessedPayload 
     scoring: Optional[ScoringResult] = None
+    extraction_confidence: Optional[float] = Field(
+        default = None, 
+        description = "Normalized confidence score from the LLM extraction, used for downstream routing. "
+    )
