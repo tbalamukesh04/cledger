@@ -30,6 +30,7 @@ from app.schemas.parsing_metadata import ParsingMetadata
 from app.ai.llm_extraction.extraction_service import process_extraction_batch
 from app.ai.batch_response_parser import parse_batch_response
 from app.ai.extraction_cache import get_cached_extractions_batch, cache_extraction_result
+from app.ai.config import EXTRACTION_CONFIDENCE_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -329,27 +330,40 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             normalized_txn_date = normalize_extracted_date(raw_extracted_date, preprocessed_data.normalized_timestamp)
             current_meta = raw_msg.parsing_meta or {}
             
+            # --- STAGE 4 & 5: CONFIDENCE EVALUATION & ROUTING DECISION ---
+            if extraction_status == "SUCCESS":
+                if confidence_score >= EXTRACTION_CONFIDENCE_THRESHOLD:
+                    txn_db_status = "accepted"
+                    routing_action = "auto_accepted"
+                else:
+                    txn_db_status = "review_required"
+                    routing_action = "flagged_for_review"
+
             current_meta["ai_extraction"] = {
                 "source": "gemini-2.5-flash",
                 "model": "gemini-2.5-flash", 
                 "batch_processed": True,
                 "batch_id": batch_id,
                 "status": extraction_status,
-                "confidence_score": confidence_score if extraction_result else 0.0,
+                "confidence": confidence_score if extraction_result else 0.0,
                 "prompt_version": getattr(extraction_result, "prompt_version", None) if extraction_result else None,
+                "routing_status": txn_db_status,
+                "routing_action": routing_action,
+                "extraction_timestamp": datetime.now(timezone.utc).isoformat(),
                 "raw_ai_output": extraction_result.model_dump() if extraction_result else None
             }
 
             logger.info(
                 json.dumps({
-                    "event_type": "extraction_confidence_scored",
+                    "event_type": "confidence_routing_decision",
                     "raw_message_id": preprocessed_data.raw_message_id,
+                    "extraction_confidence": confidence_score if extraction_result else 0.0,
+                    "threshold_value": EXTRACTION_CONFIDENCE_THRESHOLD,
+                    "routing_status": txn_db_status,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "message_hash": preprocessed_data.message_hash,
-                    "extraction_confidence": confidence_score,
                     "prompt_version": getattr(extraction_result, "prompt_version", None) if extraction_result else None,
-                    "model_version": "gemini-2.5-flash",
-                    "extraction_timestamp": datetime.now(timezone.utc).isoformat(),
-                    "status": extraction_status
+                    "model_version": "gemini-2.5-flash"
                 })
             )
 
@@ -364,7 +378,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                     txn_type=normalized_txn_verb,
                     txn_date=normalized_txn_date,
                     confidence=confidence_score,
-                    status="PARSED", 
+                    status=txn_db_status, 
                     hash=preprocessed_data.message_hash,
                     parsing_meta=current_meta
                 )

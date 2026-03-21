@@ -14,6 +14,8 @@ AI_BATCH_TIMEOUT_SECONDS = int(os.getenv("AI_BATCH_TIMEOUT_SECONDS", 5))
 
 ACTIVE_PROMPT_VERSION = os.getenv("ACTIVE_PROMPT_VERSION", "v1.1")
 
+EXTRACTION_CONFIDENCE_THRESHOLD = float(os.getenv("EXTRACTION_CONFIDENCE_THRESHOLD", 0.65))
+
 SCORING_WEIGHTS = {
     "amount_detected":           2,
     "currency_detected":         2,

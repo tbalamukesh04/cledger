@@ -20,12 +20,13 @@ class Transactions(Base, TimestampMixin):
     remarks: Mapped[str] = mapped_column(Text, nullable=True)
     total: Mapped[Decimal] = mapped_column(Numeric(18,2), nullable=True)
     confidence: Mapped[float] = mapped_column(Float, nullable=True)
-    status: Mapped[str] = mapped_column(Text, server_default="NOT PARSED", nullable=False)
+    status: Mapped[str] = mapped_column(Text, server_default="review_required", nullable=False)
     hash: Mapped[str] = mapped_column(String(256), unique=True, nullable=False)
     parsing_meta: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
         CheckConstraint(txn_type.in_(['credit', 'debit']), name='check_txn_type'),
+        CheckConstraint(status.in_(['review_required', 'accepted', 'rejected', 'NOT PARSED']), name = 'check_status_type'),
         UniqueConstraint('raw_message_id', name = "uq_transaction_raw_message"),
         Index('idx_txn_hash', 'hash', unique=True)
     )
