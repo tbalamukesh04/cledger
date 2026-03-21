@@ -233,6 +233,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
         extraction_start_time = time.time()
         gemini_response_status = "success"
         extracted_data_map = {}
+        batch_failed = False
 
         try:
             # Execute Batch LLM Request using the new function
@@ -240,12 +241,13 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             extraction_latency = round(time.time() - extraction_start_time, 3)
             
             # Parse Batch Response mapping strictly by ID
-            extracted_data_map = parse_batch_response(raw_llm_response, candidate_ids)
+            extracted_data_map = parse_batch_response(raw_llm_response, candidate_ids, batch_id)
             
         except Exception as e:
             extraction_latency = round(time.time() - extraction_start_time, 3)
             gemini_response_status = f"failed: {str(e)}"
             logger.error(f"Batch {batch_id} AI extraction failed completely: {e}")
+            batch_failed = True
 
         # STRUCTURED LOGGING FOR EXTRACTION LATENCY
         logger.info(json.dumps({
@@ -262,6 +264,9 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             raw_msg = raw_msg_map[preprocessed_data.raw_message_id]
             job = valid_jobs_map[preprocessed_data.raw_message_id]
             
+            if batch_failed: 
+                job_results[job.job_id] = "retry"
+                continue
             # Safely fetch result via string ID
             extraction_result = extracted_data_map.get(str(preprocessed_data.raw_message_id))
 
