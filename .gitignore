@@ -22,4 +22,3 @@ secrets/
 *.pem
 
 backend/tests/
-backend/migrations/versions/

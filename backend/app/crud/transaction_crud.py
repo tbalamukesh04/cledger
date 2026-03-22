@@ -48,10 +48,6 @@ def create_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = Fal
     db.add(db_txn)
     db.flush()
     
-    db_txn = Transactions(**txn_data)
-    db.add(db_txn)
-    db.flush()
-    
     create_transaction_audit(
         db = db,
         transaction = db_txn,
