@@ -1,6 +1,9 @@
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 from app.models.transactions import Transactions, TransactionStatus
+from app.models.transaction_audit import TransactionAuditAction
+from app.services.audit_service import create_transaction_audit
+from app.utils.transaction_snapshot import serialize_transaction_snapshot
 
 def get_transaction_by_message(db: Session, raw_message_id: int) -> Optional[Transactions]:
     """
@@ -14,7 +17,7 @@ def get_transaction_by_hash(db: Session, txn_hash: str) -> Optional[Transactions
     """
     return db.query(Transactions).filter(Transactions.hash == txn_hash).first()
 
-def create_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = False) -> Transactions:
+def create_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = False, actor_identifier: str = "system") -> Transactions:
     """
     Create a new transaction record.
     Enforces application-level uniqueness before insert and handles status assignment.
@@ -43,7 +46,20 @@ def create_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = Fal
     # 4. Insert Logic
     db_txn = Transactions(**txn_data)
     db.add(db_txn)
+    db.flush()
     
+    db_txn = Transactions(**txn_data)
+    db.add(db_txn)
+    db.flush()
+    
+    create_transaction_audit(
+        db = db,
+        transaction = db_txn,
+        action = TransactionAuditAction.CREATED,
+        performed_by = actor_identifier,
+        old_snapshot = None
+    )
+
     # We default commit=False so batch processors (like job_handler) can manage their own commits
     if commit:
         db.commit()
@@ -53,13 +69,15 @@ def create_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = Fal
         
     return db_txn
 
-def update_transaction(db: Session, transaction_id: int, update_data: Dict[str, Any], commit: bool = False) -> Optional[Transactions]:
+def update_transaction(db: Session, transaction_id: int, update_data: Dict[str, Any], commit: bool = False, actor_identifier: str = "system", action: TransactionAuditAction = TransactionAuditAction.UPDATED) -> Optional[Transactions]:
     """
     Update an existing transaction record (e.g., status correction workflows).
     """
     db_txn = db.query(Transactions).filter(Transactions.id == transaction_id).first()
     if not db_txn:
         return None
+
+    old_snapshot = serialize_transaction_snapshot(db_txn)
 
     # Handle status enum conversion if updating the status
     if "status" in update_data and isinstance(update_data["status"], str):
@@ -70,15 +88,23 @@ def update_transaction(db: Session, transaction_id: int, update_data: Dict[str, 
         if hasattr(db_txn, key):
             setattr(db_txn, key, value)
 
+    db.flush()
+    
+    create_transaction_audit(
+        db = db,
+        transaction = db_txn,
+        action = action,
+        performed_by = actor_identifier,
+        old_snapshot = old_snapshot
+    )
+    
     if commit:
         db.commit()
         db.refresh(db_txn)
-    else:
-        db.flush()
-
+    
     return db_txn
 
-def upsert_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = False) -> Optional[Transactions]:
+def upsert_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = False, actor_identifier: str = "system") -> Optional[Transactions]:
     """
     Create a new transaction or update an existing one based on raw_message_id.
     Human Override Protection: If an existing transaction has a status of CORRECTED 
@@ -104,7 +130,7 @@ def upsert_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = Fal
         
         forbidden_fields = {"raw_message_id", "id", "created_at"}
         update_payload = {}
-        
+
         for key, value in txn_data.items():
             if key in forbidden_fields:
                 continue
@@ -114,7 +140,15 @@ def upsert_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = Fal
             else:
                 update_payload[key] = value
 
-        return update_transaction(db, existing_txn.id, update_payload, commit=commit)
+        new_status = update_payload.get("status")
+        if new_status == TransactionStatus.CORRECTED:
+            action = TransactionAuditAction.CORRECTED
+        elif new_status == TransactionStatus.INVALIDATED:
+            action = TransactionAuditAction.INVALIDATED
+        else:
+            action = TransactionAuditAction.UPDATED
+
+        return update_transaction(db, existing_txn.id, update_payload, commit=commit, actor_identifier=actor_identifier, action=action)
         
     else:
         if "description" in txn_data:

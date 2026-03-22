@@ -389,7 +389,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                     "remarks": getattr(extraction_result, "description", getattr(extraction_result, "remarks", None))
                 }
                 try: 
-                    upsert_transaction(db=db, txn_data=txn_data, commit=False)
+                    upsert_transaction(db=db, txn_data=txn_data, commit=False, actor_identifier=WORKER_IDENTIFIER)
                     raw_msg.is_transaction = True
                 except ValueError as e:
                     logger.warning(f"Duplicate transaction skipped: {e}")
