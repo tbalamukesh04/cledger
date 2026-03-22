@@ -31,7 +31,7 @@ from app.ai.llm_extraction.extraction_service import process_extraction_batch
 from app.ai.batch_response_parser import parse_batch_response
 from app.ai.extraction_cache import get_cached_extractions_batch, cache_extraction_result
 from app.ai.config import EXTRACTION_CONFIDENCE_THRESHOLD
-from app.crud.transaction_crud import create_transaction
+from app.crud.transaction_crud import upsert_transaction
 from app.models.transactions import TransactionStatus
 
 logger = logging.getLogger(__name__)
@@ -341,7 +341,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                     txn_db_status = TransactionStatus.PARSED
                     routing_action = "auto_accepted"
                 else:
-                    txn_db_status = TransactionStatus.REVIE4
+                    txn_db_status = TransactionStatus.REVIEW_NEEDED
                     routing_action = "flagged_for_review"
 
             current_meta["ai_extraction"] = {
@@ -389,7 +389,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                     "remarks": getattr(extraction_result, "description", getattr(extraction_result, "remarks", None))
                 }
                 try: 
-                    create_transaction(db=db, txn_data=txn_data, commit=False)
+                    upsert_transaction(db=db, txn_data=txn_data, commit=False)
                     raw_msg.is_transaction = True
                 except ValueError as e:
                     logger.warning(f"Duplicate transaction skipped: {e}")

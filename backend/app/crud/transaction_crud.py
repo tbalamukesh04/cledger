@@ -77,3 +77,48 @@ def update_transaction(db: Session, transaction_id: int, update_data: Dict[str, 
         db.flush()
 
     return db_txn
+
+def upsert_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = False) -> Optional[Transactions]:
+    """
+    Create a new transaction or update an existing one based on raw_message_id.
+    Human Override Protection: If an existing transaction has a status of CORRECTED 
+    or INVALIDATED, it skips the update completely.
+    """
+    raw_message_id = txn_data.get("raw_message_id")
+    if not raw_message_id:
+        raise ValueError("raw_message_id is required for upsert operation.")
+
+    # 1. Check if transaction already exists
+    existing_txn = get_transaction_by_message(db, raw_message_id)
+
+    # 2. Human Override Protection
+    if existing_txn:
+        protected_statuses = [TransactionStatus.CORRECTED, TransactionStatus.INVALIDATED]
+        if existing_txn.status in protected_statuses:
+            return existing_txn
+    
+        if "hash" in txn_data:
+            existing_hash_txn = get_transaction_by_hash(db, txn_data["hash"])
+            if existing_hash_txn and existing_hash_txn.id != existing_txn.id:
+                raise ValueError(f"Transaction with hash {txn_data['hash']} already exists.")
+        
+        forbidden_fields = {"raw_message_id", "id", "created_at"}
+        update_payload = {}
+        
+        for key, value in txn_data.items():
+            if key in forbidden_fields:
+                continue
+            
+            if key == "description":
+                update_payload["remarks"] = value
+            else:
+                update_payload[key] = value
+
+        return update_transaction(db, existing_txn.id, update_payload, commit=commit)
+        
+    else:
+        if "description" in txn_data:
+            txn_data["remarks"] = txn_data["description"].pop("description")
+
+        return create_transaction(db, txn_data, commit=commit)
+  
