@@ -21,7 +21,7 @@ from app.utils.text_processing import normalize_whatsapp_text
 from app.utils.datetime_utils import convert_epoch_to_utc_datetime
 from app.utils.hashing import generate_content_hash, generate_text_hash
 from app.ai.ai_parser import AIParser
-from app.models.transactions import Transactions
+from app.models.transactions import Transactions, TransactionStatus
 from app.utils.date_normalization import normalize_extracted_date
 from app.utils.financial_validation import validate_and_convert_amount, normalize_currency_code, normalize_transaction_verb
 from app.ai.batch_request_builder import build_batch_request_payload
@@ -31,6 +31,8 @@ from app.ai.llm_extraction.extraction_service import process_extraction_batch
 from app.ai.batch_response_parser import parse_batch_response
 from app.ai.extraction_cache import get_cached_extractions_batch, cache_extraction_result
 from app.ai.config import EXTRACTION_CONFIDENCE_THRESHOLD
+from app.crud.transaction_crud import create_transaction
+from app.models.transactions import TransactionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -331,12 +333,15 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             current_meta = raw_msg.parsing_meta or {}
             
             # --- STAGE 4 & 5: CONFIDENCE EVALUATION & ROUTING DECISION ---
+            txn_db_status = None
+            routing_action = None
+
             if extraction_status == "SUCCESS":
                 if confidence_score >= EXTRACTION_CONFIDENCE_THRESHOLD:
-                    txn_db_status = "accepted"
+                    txn_db_status = TransactionStatus.PARSED
                     routing_action = "auto_accepted"
                 else:
-                    txn_db_status = "review_required"
+                    txn_db_status = TransactionStatus.REVIE4
                     routing_action = "flagged_for_review"
 
             current_meta["ai_extraction"] = {
@@ -347,7 +352,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 "status": extraction_status,
                 "confidence": confidence_score if extraction_result else 0.0,
                 "prompt_version": getattr(extraction_result, "prompt_version", None) if extraction_result else None,
-                "routing_status": txn_db_status,
+                "routing_status": txn_db_status.value if txn_db_status else None,
                 "routing_action": routing_action,
                 "extraction_timestamp": datetime.now(timezone.utc).isoformat(),
                 "raw_ai_output": extraction_result.model_dump() if extraction_result else None
@@ -359,7 +364,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                     "raw_message_id": preprocessed_data.raw_message_id,
                     "extraction_confidence": confidence_score if extraction_result else 0.0,
                     "threshold_value": EXTRACTION_CONFIDENCE_THRESHOLD,
-                    "routing_status": txn_db_status,
+                    "routing_status": txn_db_status.value if txn_db_status else None,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "message_hash": preprocessed_data.message_hash,
                     "prompt_version": getattr(extraction_result, "prompt_version", None) if extraction_result else None,
@@ -370,20 +375,24 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             raw_msg.parsing_meta = current_meta
 
             if extraction_status == "SUCCESS":
-                new_transaction = Transactions(
-                    tenant_id=raw_msg.tenant_id,
-                    raw_message_id=raw_msg.id,
-                    amount=validated_amount,  
-                    currency=normalized_currency,
-                    txn_type=normalized_txn_verb,
-                    txn_date=normalized_txn_date,
-                    confidence=confidence_score,
-                    status=txn_db_status, 
-                    hash=preprocessed_data.message_hash,
-                    parsing_meta=current_meta
-                )
-                db.add(new_transaction)
-                raw_msg.is_transaction = True
+                txn_data = {
+                    "tenant_id": getattr(raw_msg, "tenant_id", None),
+                    "raw_message_id": raw_msg.id,
+                    "amount": validated_amount,  
+                    "currency": normalized_currency,
+                    "txn_type": normalized_txn_verb,
+                    "txn_date": normalized_txn_date,
+                    "confidence": confidence_score,
+                    "status": txn_db_status, 
+                    "hash": preprocessed_data.message_hash,
+                    "parsing_meta": current_meta,
+                    "remarks": getattr(extraction_result, "description", getattr(extraction_result, "remarks", None))
+                }
+                try: 
+                    create_transaction(db=db, txn_data=txn_data, commit=False)
+                    raw_msg.is_transaction = True
+                except ValueError as e:
+                    logger.warning(f"Duplicate transaction skipped: {e}")
 
             processing_outcome = "success" if extraction_status in ["SUCCESS", "NON_TRANSACTION"] else "success_with_fallback"
             
