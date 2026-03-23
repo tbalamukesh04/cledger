@@ -11,6 +11,7 @@ from app.api.health import router as health_router
 from app.api.webhook import router as webhook_router
 from app.api.admin import router as admin_router
 from app.api.export import router as export_router
+from app.api.transactions_admin import router as transactions_admin_router
 
 setup_logging()
 logging.basicConfig(
@@ -66,6 +67,7 @@ app.include_router(health_router, prefix="/api/v1")
 app.include_router(webhook_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
 app.include_router(export_router, prefix="/api/v1")
+app.include_router(transactions_admin_router, prefix="/api/v1")
 
 @app.get("/", tags=["Root"])
 async def root():

@@ -1,24 +1,16 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
 from app.api.dependencies import get_db
-from app.models.transactions import Transactions, TransactionStatus
 from app.schemas.transactions import TransactionCorrectionRequest, TransactionInvalidationRequest
-from app.services.transaction_correction_service import correct_transaction_service
+from app.services.transaction_correction_service import correct_transaction_service, invalidate_transaction_service
 
-router = APIRouter()
+router = APIRouter(tags=["Transactions Admin"])
 
-@router.get("/transactions/review")
-def get_transactions_for_review(db: Session = Depends(get_db)):
-    transactions = db.query(Transactions).filter(
-        Transactions.status == TransactionStatus.REVIEW_NEEDED
-    ).order_by(Transactions.id.desc()).all()
-
-    return {"data": transactions}
-
-@router.put("/transactions/{transaction_id}/correct")
+@router.post("/transactions/{transaction_id}/correct")
 def correct_transaction_endpoint(
-    transaction_id: int, 
-    request: TransactionCorrectionRequest, 
+    transaction_id: int,
+    request: TransactionCorrectionRequest,
     db: Session = Depends(get_db),
 ):
     try:
@@ -47,7 +39,7 @@ def correct_transaction_endpoint(
         logger.error(f"Error correcting transaction {transaction_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.put("/transactions/{transaction_id}/invalidate")
+@router.post("/transactions/{transaction_id}/invalidate")
 def invalidate_transaction_endpoint(
     transaction_id: int,
     request: TransactionInvalidationRequest,
