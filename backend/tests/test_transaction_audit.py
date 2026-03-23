@@ -282,3 +282,52 @@ def test_audit_record_is_immutable():
     finally:
         _cleanup(db, participant_id, group_id, raw_message_id, txn_id)
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Scenario 5 — Invalidation
+# ---------------------------------------------------------------------------
+
+def test_audit_entry_created_on_invalidation():
+    db = SessionLocal()
+    test_run_id = uuid.uuid4().hex
+    participant_id, group_id, raw_message_id = _make_prerequisites(db, test_run_id)
+    txn_id = None
+
+    try:
+        txn = create_transaction(
+            db=db,
+            txn_data=_make_txn_data(raw_message_id),
+            commit=True,
+            actor_identifier="worker-test",
+        )
+        txn_id = txn.id
+
+        update_transaction(
+            db=db,
+            transaction_id=txn.id,
+            update_data={"status": TransactionStatus.INVALIDATED, "remarks": "Marked invalid by admin"},
+            commit=True,
+            actor_identifier="admin-user",
+            action=TransactionAuditAction.INVALIDATED,
+        )
+
+        audits = (
+            db.query(TransactionAudit)
+            .filter(TransactionAudit.transaction_id == txn.id)
+            .order_by(TransactionAudit.id)
+            .all()
+        )
+
+        assert len(audits) == 2, f"Expected 2 audit entries, got {len(audits)}."
+
+        invalidation_audit = audits[1]
+        assert invalidation_audit.action == TransactionAuditAction.INVALIDATED.value
+        assert invalidation_audit.old_value["status"] == TransactionStatus.PARSED.value
+        assert invalidation_audit.new_value["status"] == TransactionStatus.INVALIDATED.value
+        assert invalidation_audit.new_value["remarks"] == "Marked invalid by admin"
+        assert invalidation_audit.actor_identifier == "admin-user"
+
+    finally:
+        _cleanup(db, participant_id, group_id, raw_message_id, txn_id)
+        db.close()

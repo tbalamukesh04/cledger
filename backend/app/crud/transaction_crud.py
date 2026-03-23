@@ -148,7 +148,7 @@ def upsert_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = Fal
         
     else:
         if "description" in txn_data:
-            txn_data["remarks"] = txn_data["description"].pop("description")
+            txn_data["remarks"] = txn_data.pop("description")
 
         return create_transaction(db, txn_data, commit=commit)
   

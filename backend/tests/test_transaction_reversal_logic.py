@@ -94,7 +94,7 @@ def test_transaction_correction_and_snapshot_integrity(db_session):
     assert latest_audit.old_value != latest_audit.new_value
 
 def test_worker_protection_rule(db_session):
-    """Tests Scenario 3: Worker cannot overwrite CORRECTED/INVALIDATED transactions"""
+    """Tests Scenario 3a: Worker cannot overwrite CORRECTED transactions"""
     # 1. Setup: Create a transaction and correct it
     txn, raw_msg = create_base_data(db_session)
     txn_id = txn.id
@@ -125,28 +125,34 @@ def test_worker_protection_rule(db_session):
     assert final_txn.amount == Decimal("200.00") # Maintained the corrected amount, ignored 50.00
     assert final_txn.id == result_txn.id
 
-def test_transaction_invalidation(db_session):
-    """Tests Scenario 2: Transaction Invalidation"""
-    txn, _ = create_base_data(db_session)
+def test_worker_protection_rule_invalidated(db_session):
+    """Tests Scenario 3b: Worker cannot overwrite INVALIDATED transactions"""
+    # 1. Setup: Create a transaction and invalidate it
+    txn, raw_msg = create_base_data(db_session)
     txn_id = txn.id
     
-    invalidate_payload = {
-        "reason": "Duplicate physical ledger entry"
-    }
+    invalidate_payload = {"reason": "Mistake by AI, not a transaction"}
+    client.post(f"/api/v1/transactions/{txn_id}/invalidate", json=invalidate_payload)
     
-    # Admin invalidates transaction
-    response = client.post(f"/api/v1/transactions/{txn_id}/invalidate", json=invalidate_payload)
-    assert response.status_code == 200
-    
-    # Verify DB State
     db_session.expire_all()
     invalidated_txn = db_session.query(Transactions).filter(Transactions.id == txn_id).first()
     assert invalidated_txn.status == TransactionStatus.INVALIDATED
-    assert "Duplicate physical ledger entry" in invalidated_txn.remarks
     
-    # Verify Audit Log
-    audit_logs = db_session.query(TransactionAudit).filter(TransactionAudit.transaction_id == txn_id).all()
-    latest_audit = audit_logs[-1]
-    assert latest_audit.action == TransactionAuditAction.INVALIDATED
-    assert latest_audit.old_value["status"] == "review_needed"
-    assert latest_audit.new_value["status"] == "invalidated"
+    # 2. Worker attempts to reprocess the same message
+    worker_payload = {
+        "raw_message_id": raw_msg.id,
+        "amount": Decimal("100.00"), 
+        "currency": "USD",
+        "txn_type": "credit",
+        "hash": f"new_hash_{uuid.uuid4()}" 
+    }
+    
+    # Simulate the background worker calling upsert_transaction
+    result_txn = upsert_transaction(db_session, worker_payload, commit=True, actor_identifier="worker")
+    
+    # 3. Verify worker did NOT overwrite the invalidation
+    db_session.expire_all()
+    final_txn = db_session.query(Transactions).filter(Transactions.id == txn_id).first()
+    assert final_txn.status == TransactionStatus.INVALIDATED
+    assert "Mistake by AI, not a transaction" in final_txn.remarks
+    assert final_txn.id == result_txn.id
