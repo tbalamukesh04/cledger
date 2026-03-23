@@ -1,7 +1,7 @@
 from typing import Optional, Dict, Any
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.models.transactions import Transactions, TransactionStatus
-from app.models.transaction_audit import TransactionAuditAction
+from app.models.transaction_audit import TransactionAudit, TransactionAuditAction
 from app.models.raw_messages import RawMessages
 from app.models.participants import Participants
 from app.schemas.transactions import TransactionQueryParams
@@ -56,7 +56,26 @@ def get_transactions(db: Session, tenant_id: int, filters: TransactionQueryParam
 
     return query
 
-def get_transaction_by_message(db: Session, raw_message_id: int) -> Optional[Transactions]:
+def get_transaction_by_id(db: Session, transaction_id: int, tenant_id: int) -> Optional[Transactions]:
+    """
+    Fetch a transaction by its ID and tenant_id, eagerly loading related entities.
+    """
+    return db.query(Transactions).filter(
+        Transactions.id == transaction_id, 
+        Transactions.tenant_id == tenant_id
+    ).options(
+        joinedload(Transactions.raw_message).joinedload(RawMessages.sender)
+    ).first()
+
+def get_transaction_audit_history(db: Session, transaction_id: int):
+    """
+    Fetch audit history for a specific transaction ordered by created_at ascending.
+    """
+    return db.query(TransactionAudit).filter(
+        TransactionAudit.transaction_id == transaction_id
+    ).order_by(asc(TransactionAudit.created_at)).all()
+
+def get_transaction_by_message(db: Session, raw_message_id: int) -> Optional[Transactions]:    
     """
     Fetch a transaction by its associated raw message ID.
     """

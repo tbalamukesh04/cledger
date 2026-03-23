@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from app.core.auth_dependencies import get_current_user, require_admin
 from app.api.dependencies import get_db
-from app.schemas.transactions import TransactionQueryParams
-from app.crud.transaction_crud import get_transactions
+from app.schemas.transactions import TransactionQueryParams, SingleTransactionResponse
+from app.crud.transaction_crud import get_transactions, get_transaction_by_id, get_transaction_audit_history
 from app.models.transactions import Transactions
 from app.models.raw_messages import RawMessages
 from typing import Dict, Any
@@ -64,11 +64,33 @@ async def list_transactions(
         serialized_transactions.append(txn_dict)
         
     return {
-        "total": total_count,
         "limit": filters.limit,
         "offset": filters.offset,
         "transactions": serialized_transactions
     }
+
+@router.get("/{transaction_id}", response_model=SingleTransactionResponse)
+async def get_single_transaction(
+    transaction_id: int,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Retrieve detailed information for a single transaction by ID, including its audit history.
+    """
+    tenant_id = current_user.get("tenant_id")
+    
+    transaction = get_transaction_by_id(db, transaction_id=transaction_id, tenant_id=tenant_id)
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+        
+    audit_history = get_transaction_audit_history(db, transaction_id=transaction_id)
+    
+    return {
+        "transaction": transaction,
+        "audit_history": audit_history
+    }
+
 @router.get("/health")
 async def transactions_health():
     """
