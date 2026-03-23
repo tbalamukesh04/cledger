@@ -9,20 +9,22 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
 def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
     """
     FastAPI dependency to extract and verify the JWT token from the Authorization header.
-    Ensures the token contains a valid user_id.
+    Ensures the token contains a valid user_id and tenant_id.
     """
     payload = verify_jwt_token(token)
     user_id = payload.get("user_id")
+    tenant_id = payload.get("tenant_id")
     
-    if user_id is None:
+    if user_id is None or tenant_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token payload missing user_id",
+            detail="Token payload missing user_id or tenant_id",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
     return {
         "user_id": user_id,
+        "tenant_id": tenant_id,
         "role": payload.get("role", "user")
     }
 

@@ -5,7 +5,7 @@ from app.core.jwt_utils import create_access_token, verify_jwt_token
 
 def test_valid_token_decoding():
     """Verify that a freshly created token decodes correctly."""
-    token = create_access_token(user_id="abc123", role="admin")
+    token = create_access_token(user_id="abc123", tenant_id=1, role="admin")
     payload = verify_jwt_token(token)
     
     assert payload["user_id"] == "abc123"
@@ -16,6 +16,7 @@ def test_expired_token_raises_exception():
     """Verify that an expired token correctly raises an HTTPException."""
     token = create_access_token(
         user_id="abc123", 
+        tenant_id=1,
         expires_delta=datetime.timedelta(minutes=-1)
     )
     
@@ -56,7 +57,7 @@ def test_scenario_2_access_with_invalid_token():
 def test_scenario_3_and_4_valid_token_and_role_extraction():
     """Scenario 3 & 4: Verify valid token allows access and role is correctly extracted."""
     # We will encode a specific role here to verify extraction
-    token = create_access_token(user_id="user_789", role="admin")
+    token = create_access_token(user_id="user_789", tenant_id=1, role="admin")
     headers = {"Authorization": f"Bearer {token}"}
     
     # We hit the /me endpoint because it returns the current_user context

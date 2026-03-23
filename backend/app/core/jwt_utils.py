@@ -7,7 +7,7 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "default_insecure_secret_key_change
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
-def create_access_token(user_id: str | int, role: str = "user", expires_delta: timedelta | None = None) -> str:
+def create_access_token(user_id: int, tenant_id: int, role: str = "user", expires_delta: timedelta | None = None) -> str:
     """
     Creates a JWT access token encoding the user_id and role.
     """
@@ -16,7 +16,7 @@ def create_access_token(user_id: str | int, role: str = "user", expires_delta: t
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    to_encode = {"user_id": user_id, "role": role, "exp": expire}
+    to_encode = {"user_id": user_id, "tenant_id": tenant_id, "role": role, "exp": expire}
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
     return encoded_jwt
 

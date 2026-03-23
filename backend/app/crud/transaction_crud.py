@@ -2,8 +2,59 @@ from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 from app.models.transactions import Transactions, TransactionStatus
 from app.models.transaction_audit import TransactionAuditAction
+from app.models.raw_messages import RawMessages
+from app.models.participants import Participants
+from app.schemas.transactions import TransactionQueryParams
 from app.services.audit_service import create_transaction_audit
 from app.utils.transaction_snapshot import serialize_transaction_snapshot
+from sqlalchemy import or_,asc, desc
+
+def get_transactions(db: Session, tenant_id: int, filters: TransactionQueryParams):
+    """
+    Builds and returns a SQLAlchemy query for transactions based on provided filters.
+    """
+    query = db.query(Transactions).filter(Transactions.tenant_id == tenant_id)
+    
+    if filters.status:
+        query = query.filter(Transactions.status == filters.status)
+
+    if filters.date_from:
+        query = query.filter(Transactions.txn_date >= filters.date_from)
+
+    if filters.date_to:
+        query = query.filter(Transactions.txn_date <= filters.date_to)
+
+    if filters.amount_min:
+        query = query.filter(Transactions.amount >= filters.amount_min)
+
+    if filters.amount_max:
+        query = query.filter(Transactions.amount <= filters.amount_max)
+
+    if filters.currency:
+        query = query.filter(Transactions.currency == filters.currency)
+
+    if filters.participant:
+        query = query.join(RawMessages, Transactions.raw_message_id == RawMessages.id) \
+                     .join(Participants, RawMessages.participant_id == Participants.id) \
+                     .filter(or_(Participants.displayname.ilike(f"%{filters.participant}%"),
+                                 Participants.phone.ilike(f"%{filters.participant}%")))
+    
+    sort_mapping = {
+        "transaction_date": Transactions.txn_date,
+        "amount": Transactions.amount,
+        "created_at": Transactions.created_at,
+    }
+
+    sort_column = sort_mapping.get(filters.sort_by, Transactions.created_at)
+
+    if filters.sort_order == "asc":
+        query = query.order_by(asc(sort_column))
+    else:
+        query = query.order_by(desc(sort_column))
+
+    query = query.offset(filters.offset).limit(filters.limit)
+
+    return query
 
 def get_transaction_by_message(db: Session, raw_message_id: int) -> Optional[Transactions]:
     """
