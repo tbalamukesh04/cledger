@@ -1,0 +1,124 @@
+import pytest
+import uuid
+from datetime import datetime, timezone, timedelta
+
+from app.database.database import SessionLocal
+from app.models.raw_messages import RawMessages
+from app.models.groups import Groups
+from app.models.participants import Participants
+from app.models.transactions import Transactions
+from app.schemas.jobs import WebhookJobPayload
+from app.workers.job_handler import process_webhook_batch
+
+# Define the test dataset
+TEST_MESSAGES = [
+    {"text": "paid Rahul 500 yesterday", "expected_amount": 500.0, "expected_verb": "DEBIT"},
+    {"text": "sent ₹1200 to Aman", "expected_amount": 1200.0, "expected_verb": "DEBIT"},
+    {"text": "received 200 from John", "expected_amount": 200.0, "expected_verb": "CREDIT"},
+    {"text": "transferred 1500 for rent", "expected_amount": 1500.0, "expected_verb": "DEBIT"}
+]
+
+@pytest.fixture(scope="module")
+def setup_test_data():
+    """Sets up the prerequisite database records for the batch test."""
+    db = SessionLocal()
+    tenant_id = 1
+    
+    # 1. Create a dummy group and participant
+    group = Groups(group_id=f"test_group_{uuid.uuid4().hex[:8]}", groupname="Batch Test Group", tenant_id=tenant_id)
+    participant = Participants(phone=f"+1000{uuid.uuid4().hex[:4]}", displayname="Batch Tester", tenant_id=tenant_id)
+    db.add(group)
+    db.add(participant)
+    db.commit()
+    db.refresh(group)
+    db.refresh(participant)
+
+    raw_messages = []
+    jobs = []
+
+    # 2. Insert the RawMessages and construct the Job Payloads
+    for msg_data in TEST_MESSAGES:
+        # Construct a simulated Meta WhatsApp JSON payload
+        simulated_json = {
+            "entry": [{"changes": [{"value": {"messages": [{
+                "type": "text", 
+                "text": {"body": msg_data["text"]},
+                "timestamp": str(int(datetime.now(timezone.utc).timestamp()))
+            }]}}]}]
+        }
+
+        raw_msg = RawMessages(
+                tenant_id=tenant_id,
+                group_id=group.id,
+                sender_id=participant.id,
+                message_id=f"wamid.{uuid.uuid4().hex}",
+                raw_json=simulated_json,
+                received_at=datetime.now(timezone.utc),
+                processed=False,
+                hash=f"test_hash_{uuid.uuid4().hex}" 
+            )
+        db.add(raw_msg)
+        db.commit()
+        db.refresh(raw_msg)
+        raw_messages.append(raw_msg)
+
+        # Create the worker job payload
+        job = WebhookJobPayload(
+            job_id=str(uuid.uuid4()),
+            raw_message_id=raw_msg.id,
+            participant_id=participant.id,     # <-- ADD THIS
+            group_id=group.id,                 # <-- ADD THIS
+            webhook_event_type="messages",
+            message_timestamp=raw_msg.received_at,
+            ingestion_time=raw_msg.received_at # <-- ADD THIS
+        )
+        jobs.append(job)
+
+    yield db, jobs, raw_messages
+
+    # 3. Teardown: Clean up the database after the test
+    transaction_ids = [msg.id for msg in raw_messages]
+    db.query(Transactions).filter(Transactions.raw_message_id.in_(transaction_ids)).delete(synchronize_session=False)
+    db.query(RawMessages).filter(RawMessages.id.in_(transaction_ids)).delete(synchronize_session=False)
+    db.delete(group)
+    db.delete(participant)
+    db.commit()
+    db.close()
+
+
+def test_batch_llm_extraction(setup_test_data):
+    """
+    Integration test to verify that multiple messages are processed in a single batch,
+    parsed correctly, and mapped back to their individual database records.
+    """
+    db, jobs, raw_messages = setup_test_data
+
+    # 1. Execute the Batch Handler
+    # This will trigger the scoring engine, batch them, call Gemini, parse the array, and map to DB
+    results = process_webhook_batch(jobs)
+
+    # 2. Verify worker status map
+    assert len(results) == len(TEST_MESSAGES), "Worker did not return a status for all jobs"
+    for job in jobs:
+        assert results[job.job_id] == "success", f"Job {job.job_id} failed processing"
+
+    # 3. Verify Database Persistence & ID Mapping
+    for i, msg_data in enumerate(TEST_MESSAGES):
+        raw_msg = raw_messages[i]
+        
+        # Refresh the raw message to get updated processing status
+        db.refresh(raw_msg)
+        assert raw_msg.processed is True
+        assert raw_msg.is_transaction is True
+        assert raw_msg.processing_status == "success"
+        
+        # Verify the Transaction record was created and mapped to the right message
+        transaction = db.query(Transactions).filter(Transactions.raw_message_id == raw_msg.id).first()
+        
+        assert transaction is not None, f"Transaction record missing for message: '{msg_data['text']}'"
+        assert float(transaction.amount) == msg_data["expected_amount"]
+        assert transaction.txn_type.upper() == msg_data["expected_verb"].upper()
+        
+        # Check that the metadata contains the successful AI extraction flag
+        assert "ai_extraction" in transaction.parsing_meta
+        assert transaction.parsing_meta["ai_extraction"]["batch_processed"] is True

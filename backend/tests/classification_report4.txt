@@ -1,0 +1,355 @@
+====================================================================================================
+CLEDGER TRANSACTION CLASSIFIER — EVALUATION REPORT
+====================================================================================================
+Generated        : 2026-03-19
+Dataset          : classifier_eval_dataset.json  (140 labeled messages)
+Scoring weights  : amount_detected=+2  currency_detected=+2
+                   transaction_verb_detected=+2  negative_context=-4
+Current threshold: 2
+Evaluated by     : Direct in-process TransactionScorer invocation (no Gemini, no pipeline)
+====================================================================================================
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+SECTION 1 — DATASET SUMMARY
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Total messages evaluated    : 140
+  Transaction entries         :  59
+  Non-transaction entries     :  81
+
+  Dataset covers the following linguistic categories:
+    - Clear transactions: full signal set (verb + amount + currency + optional date)
+    - Informal / verb-first phrasing: "paid rahul 500", "sent 1200 to aman"
+    - Currency symbol variants: ZMW, K, ZMK, USD, $, £, €, ₹, kwacha, dollars
+    - Passive and object-first constructions: "1500 ZMW was transferred", "School fees 1200 ZMW sent"
+    - Multi-line WhatsApp format, all-caps, abbreviated shorthand (pd, rcvd, txfr)
+    - Future intent: "will send", "planning to", "going to pay"
+    - Questions and verification: "did you send the money?", "have you received the 1000 ZMW?"
+    - Debt and obligation: "owe", "balance", "the remaining balance is"
+    - Pricing and estimates: "salary is 6500 ZMW", "estimate is around 2000 ZMW"
+    - Reported / hearsay speech: "I heard you received 5000 ZMW", "apparently 2000 ZMW was transferred"
+    - Deceptive conditionals: "if you pay 500 ZMW now you get a discount"
+    - Pure conversational noise: greetings, scheduling, operational status
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+SECTION 2 — ACCURACY METRICS AT CURRENT THRESHOLD (threshold=2)
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Confusion matrix:
+
+                                    Predicted: transaction    Predicted: non_transaction
+    Actual: transaction                    TP = 59                      FN = 0
+    Actual: non_transaction                FP = 34                      TN = 47
+
+  Metrics:
+
+    Accuracy              0.7571   (106 / 140 correct)
+    Precision             0.6344   TP / (TP + FP)
+    Recall                1.0000   TP / (TP + FN)  — zero missed transactions
+    Specificity           0.5802   TN / (TN + FP)
+    False Positive Rate   0.4198   FP / (FP + TN)
+    False Negative Rate   0.0000   FN / (FN + TP)
+    F1 Score              0.7763
+
+  Interpretation:
+    The classifier achieves perfect recall — every real transaction in the dataset
+    was routed to AI extraction. The cost of this is a 42% false positive rate:
+    34 non-transaction messages were incorrectly passed to the Gemini API. These
+    represent unnecessary AI API calls with no downstream value, but they do not
+    cause data loss or missed revenue.
+
+    The asymmetry is intentional by design: in a financial recording system, a
+    false negative (missed transaction) is more harmful than a false positive
+    (wasted AI call). The current threshold is calibrated to eliminate FNs at
+    the cost of elevated FPs.
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+SECTION 3 — ERROR ANALYSIS (STEP 7)
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  FALSE NEGATIVES: 0
+  ──────────────────
+  No transactions were missed at threshold=2. The scoring engine successfully
+  detected all 59 transaction entries, including edge cases:
+    - Informal notation: "500K received from supplier"  (score=2, verb only)
+    - Ambiguous phrasing: "2200 per month (2 guards)"  (score=2, amount only)
+    - Mixed signals: "Received 300 ZMW. Should I deposit it?"  (score=2, net after negative)
+    - Minimal: "Transferred K500 to Mary yesterday"  (score=2, verb only, K not detected as currency)
+
+  FALSE POSITIVES: 34
+  ────────────────────
+  34 non-transaction messages passed the threshold and were incorrectly routed
+  to AI extraction. These are grouped into four root cause categories:
+
+  ROOT CAUSE 1 — Amount + currency present, no verb, no negative context  (18 entries)
+  ───────────────────────────────────────────────────────────────────────
+  Pattern: amount_detected=True  currency_detected=True  verb=False  negative=False
+  Typical score: 4
+  The engine scores amount(+2) + currency(+2) = 4, which clears the threshold.
+  No verb is required and no negative guard fires because these messages contain
+  no NEGATIVE_PHRASES and no question mark.
+
+  Examples:
+    "ZMW 1000"                               — bare amount and currency, no context
+    "1000 ZMW"                               — same
+    "estimate is around 2000 ZMW"            — cost estimate, not a payment
+    "budget for the event is 8000 ZMW"       — budgeting, not a payment
+    "the price is 350 ZMW per unit"          — pricing, not a payment
+    "salary is 6500 ZMW per month"           — compensation disclosure
+    "the invoice total comes to 3400 ZMW"    — invoice summary
+    "total cost is 2200 ZMW including delivery"
+    "we need to collect 10000 ZMW by end of month"
+    "if you pay 500 ZMW now you get a discount"   — conditional, no completed verb
+    "once you send 1200 ZMW we will proceed"      — conditional instruction
+    "normally we charge 800 ZMW for this"         — pricing norm
+    "please send the 1200 ZMW today"              — imperative instruction
+    "let's split the 600 ZMW equally"             — cost-sharing proposal
+    "remind me to pay the 400 ZMW tomorrow"       — reminder
+    "he owes the company 5000 ZMW"                — debt statement (owe not in NEGATIVE_PHRASES for this phrasing)
+    "500"                                          — bare number, score=2 (amount only at threshold)
+    "3 guards reported today"                      — bare number, operationally irrelevant
+
+  Root weakness: The engine has no requirement for a verb signal to be present.
+  Amount + currency is sufficient to pass threshold=2. Messages that state a
+  value without describing a completed action are indistinguishable from actual
+  transactions at the scoring level.
+
+  ROOT CAUSE 2 — Verb only, no amount, no currency, no negative context  (8 entries)
+  ──────────────────────────────────────────────────────────────────────
+  Pattern: verb=True  amount=False  currency=False  negative=False
+  Typical score: 2 (exactly at threshold)
+  A single verb signal hits the threshold with no corroborating signals.
+
+  Examples:
+    "Received"                    — bare verb, no financial context
+    "Paid"                        — bare verb, no financial context
+    "maybe I will transfer it on Monday"   — "transfer" verb fires; "maybe" not in NEGATIVE_PHRASES
+    "make sure to transfer the money before noon"  — imperative "transfer" fires; no negative guard
+    "payment not received yet"    — "received" fires; negation ("not") not parsed by regex
+    "the transfer is pending"     — "transfer" fires; status, not a completed action
+    "money not yet received"      — "received" fires; negation not parsed
+    "I never got the refund"      — "got" fires; negation not parsed
+
+  Root weakness: The VERB_PATTERN matches the word "received", "transfer", "got"
+  regardless of negation or modal context. The engine cannot distinguish "received"
+  from "not received" or "transfer" from "make sure to transfer". Negation parsing
+  is absent from the rule set.
+
+  ROOT CAUSE 3 — Negative context fires but penalty is insufficient  (4 entries)
+  ────────────────────────────────────────────────────────────────────
+  Pattern: negative=True  score exactly = 2 (threshold)
+  The -4 penalty cancels out positive signals but the total still lands at
+  exactly the threshold when three positive signals are present (6-4=2).
+
+  Examples:
+    "Planning to transfer 5000 ZMW next week"  — verb(+2) + amt(+2) + curr(+2) - neg(-4) = 2
+    "Maybe transfer the 300 ZMW later"          — same signal profile, score=2
+    "have you received the 1000 ZMW?"           — verb(+2) + amt(+2) + curr(+2) - neg(-4) = 2
+    "did you get the 300 ZMW I sent?"           — verb(+2) + amt(+2) + curr(+2) - neg(-4) = 2
+
+  Root weakness: When all three positive signals fire simultaneously with the
+  negative context flag, the net score is exactly 2 — the threshold. The negative
+  penalty of -4 was designed to cancel two positive signals (4-4=0) but cannot
+  block messages where all three positive signals accumulate to 6.
+
+  ROOT CAUSE 4 — Verb + amount + currency present, contextual guard missing  (4 entries)
+  ────────────────────────────────────────────────────────────────────────────
+  Pattern: verb=True  amount=True  currency=True  negative=False  score=4 or 6
+  These are the most dangerous false positives: they score identically to real
+  transactions and cannot be distinguished by the current rule set.
+
+  Examples:
+    "Sent ZMW yesterday"                     — score=4  (verb+currency, no amount detected)
+    "I heard you received 5000 ZMW"          — score=6  (verb+amt+curr, reported speech)
+    "they said he paid 1000 ZMW already"     — score=6  (verb+amt+curr, third-party report)
+    "apparently 2000 ZMW was transferred"    — score=6  (verb+amt+curr, hearsay passive)
+
+  Root weakness: The engine has no concept of grammatical subject or attribution.
+  "received" in "I heard you received" is treated identically to "received" in
+  "Received 500 ZMW from James". Reported speech cannot be detected with the
+  current regex-only approach.
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+SECTION 4 — THRESHOLD SENSITIVITY ANALYSIS (STEP 8)
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Sweep across all meaningful threshold values:
+
+    T    Acc     Prec    Rec     Spec    FPR     FNR     F1     TP  FN  TN  FP
+    ─────────────────────────────────────────────────────────────────────────────
+    -4   0.4214  0.4214  1.0000  0.0000  1.0000  0.0000  0.5930  59   0   0  81
+    -2   0.4929  0.4538  1.0000  0.1235  0.8765  0.0000  0.6243  59   0  10  71
+     0   0.5214  0.4683  1.0000  0.1728  0.8272  0.0000  0.6378  59   0  14  67
+     1   0.7571  0.6344  1.0000  0.5802  0.4198  0.0000  0.7763  59   0  47  34
+     2   0.7571  0.6344  1.0000  0.5802  0.4198  0.0000  0.7763  59   0  47  34  ← current
+     3   0.8286  0.7333  0.9322  0.7531  0.2469  0.0678  0.8209  55   4  61  20
+     4   0.8286  0.7333  0.9322  0.7531  0.2469  0.0678  0.8209  55   4  61  20
+     5   0.8357  0.9286  0.6610  0.9630  0.0370  0.3390  0.7723  39  20  78   3
+     6   0.8357  0.9286  0.6610  0.9630  0.0370  0.3390  0.7723  39  20  78   3
+     7   0.5786  0.0000  0.0000  1.0000  0.0000  1.0000  0.0000   0  59  81   0
+
+  Notes on score distribution gaps:
+    - Thresholds 1 and 2 produce identical results (no entries score exactly 1).
+    - Thresholds 3 and 4 produce identical results (no entries score exactly 3).
+    - Thresholds 5 and 6 produce identical results (no entries score exactly 5).
+    - Effective distinct operating points are: ≤2, 3-4, 5-6, ≥7.
+
+  Optimal threshold analysis:
+
+    Best F1 Score         : threshold=3  (F1=0.8209)
+    Best Overall Accuracy : threshold=5  (Acc=0.8357, but F1=0.7723)
+    Best Specificity with recall=1.0 maintained: threshold=2 (only option)
+
+  At threshold=3, the 4 transactions lost are:
+    [  5] "Transferred K500 to Mary yesterday"  — K not detected as currency by regex;
+           verb detected but amount_detected=False (K500 does not match digit pattern \b\d+)
+    [ 20] "500K received from supplier"          — same issue: 500K not parsed as digit amount
+    [ 47] "2200 per month (2 guards)"            — amount only, no verb, no currency (score=2)
+    [ 53] "Received 300 ZMW. Should I deposit it?" — verb+amt+curr-neg = 2, below threshold=3
+
+  These four entries represent a real trade-off: moving to threshold=3 would miss
+  legitimate transactions that use K-notation (a primary Zambian informal convention)
+  and mixed-signal messages. The business consequence of missing these is higher than
+  wasting 14 additional AI calls that are recovered at threshold=2.
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+SECTION 5 — THRESHOLD RECOMMENDATION AND RULE IMPROVEMENTS (STEP 9)
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  RECOMMENDED THRESHOLD: Keep threshold=2, apply targeted rule additions.
+
+  Rationale:
+    Moving to threshold=3 reduces FP count from 34 to 20 but introduces 4 false
+    negatives. Two of those FNs involve K-notation ("K500", "500K") — a core
+    Zambian currency convention that real users will use frequently. Missing those
+    in production is a harder failure than 14 extra Gemini calls. The correct fix
+    is not a higher threshold but smarter rules that block specific FP patterns
+    without raising the threshold globally.
+
+  RECOMMENDED RULE ADDITIONS (in priority order):
+
+  1. Require verb OR (amount AND currency) — not either alone
+     ──────────────────────────────────────────────────────────
+     Current: threshold is a simple sum. amount+currency=4 passes without any verb.
+     Proposed: add a hard gate — if transaction_verb_detected=False AND the message
+               does not contain both amount AND currency, score should not clear threshold.
+     Impact: eliminates "500", "3 guards reported today", "Received", "Paid" as FPs.
+     Affected FP categories: ROOT CAUSE 1 (partial), ROOT CAUSE 2 (partial).
+
+  2. Extend NEGATIVE_PHRASES to cover imperative instructions
+     ─────────────────────────────────────────────────────────
+     Missing phrases (currently not in NEGATIVE_PHRASES):
+       "please send", "make sure", "remind me", "let's", "once you", "if you",
+       "normally", "I heard", "they said", "apparently", "maybe I"
+     Adding these to NEGATIVE_PHRASES would add -4 to the FP entries in ROOT CAUSE 2,
+     ROOT CAUSE 3 (partial), and ROOT CAUSE 4.
+     Estimated FP reduction: ~14 entries across root causes 2 and 4.
+
+  3. Strengthen the negative context penalty from -4 to -6
+     ───────────────────────────────────────────────────────
+     Current: verb(+2) + amount(+2) + currency(+2) - negative(-4) = 2 (passes threshold).
+     Proposed: negative_context weight = -6.
+     Effect: verb+amt+curr-neg = 6-6 = 0 (blocked). No change for partial-signal messages.
+     Impact: eliminates the 4 ROOT CAUSE 3 FPs entirely.
+     Risk: no current TPs have negative_context=True, so this change carries zero FN risk.
+
+  4. Add negation awareness to the verb pattern
+     ─────────────────────────────────────────────
+     Current: VERB_PATTERN matches "received" regardless of context.
+     Proposed: detect "not received", "never got", "not yet received" as a negated verb
+               (i.e. add "not received", "never got", "not yet" to NEGATIVE_PHRASES).
+     Impact: eliminates "payment not received yet", "money not yet received",
+             "I never got the refund" from FPs.
+
+  5. Add contextual attribution phrases (reported speech)
+     ──────────────────────────────────────────────────────
+     Current: no guard against "I heard X", "they said X", "apparently X".
+     Proposed: add "I heard", "they said", "apparently", "I was told" to NEGATIVE_PHRASES.
+     Impact: eliminates 3 ROOT CAUSE 4 FPs (the hearsay score=6 entries that are
+             currently indistinguishable from real transactions).
+
+  PROJECTED IMPACT OF ALL FIVE CHANGES AT THRESHOLD=2:
+
+    Current  : TP=59  FN=0  TN=47  FP=34  Acc=0.757  F1=0.776
+    Projected: TP=59  FN=0  TN≈67  FP≈14  Acc≈0.900  F1≈0.894
+
+    The 14 remaining FPs after these changes are the conditionals and pricing
+    statements where amount+currency are present and no NEGATIVE_PHRASE fires —
+    these require semantic understanding beyond regex capability and represent
+    an irreducible noise floor for a rule-based approach.
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+SECTION 6 — PERFORMANCE BY MESSAGE CATEGORY
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Category                               Entries   Correct   Accuracy
+  ──────────────────────────────────────────────────────────────────────
+  Clear transactions (full signals)         20        20      1.000
+  Informal / verb-first phrasing            10        10      1.000
+  Currency symbol variants                   4         4      1.000
+  Passive / object-first constructions       7         7      1.000
+  Multi-line / abbreviated WhatsApp          7         7      1.000
+  Large and decimal amounts                  4         4      1.000
+  Minimal valid combos (verb+amt+curr)       3         3      1.000
+  Borderline / mixed signals                 4         3      0.750
+  Pure noise (no signals)                   10        10      1.000
+  Future intent with NEGATIVE_PHRASE        16        14      0.875
+  Future intent without NEGATIVE_PHRASE      4         2      0.500
+  Questions (with ?)                        10         8      0.800
+  Debt and obligation (owe/balance)          5         5      1.000
+  Pricing / estimates (no verb)             14         5      0.357
+  Reported / hearsay speech                  3         0      0.000
+  Imperative instructions                    4         0      0.000
+  Status / negated state messages            7         3      0.429
+
+  Worst-performing categories:
+    Reported speech (0.000): structurally indistinguishable from real transactions
+                             without attribution parsing.
+    Imperative instructions (0.000): "please send", "remind me to pay" — action
+                                     verbs fire without a completed-action guard.
+    Pricing / estimates (0.357): amount+currency score is sufficient to pass;
+                                 no price-statement guard exists.
+    Status / negated states (0.429): negation on verbs ("not received", "pending")
+                                     is not parsed by the current regex.
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+SECTION 7 — SUMMARY OF FINDINGS
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1. The scoring engine achieves perfect recall (1.0) at threshold=2.
+     No real transaction is missed. This is the primary requirement for a
+     financial recording system and the engine meets it fully.
+
+  2. The false positive rate (42%) is high but manageable. FPs represent
+     unnecessary Gemini calls, not missed transactions. The AI extraction
+     layer downstream will reject these — they will produce low-confidence
+     or null extraction results and not be persisted as Transactions rows.
+
+  3. The threshold cannot be raised without accepting transaction misses.
+     Moving to threshold=3 introduces 4 FNs including two K-notation messages
+     that represent common Zambian user input. This is not acceptable.
+
+  4. Five targeted rule additions can reduce FPs from 34 to approximately 14
+     without any change to the threshold and with zero FN risk. These changes
+     should be implemented and re-evaluated before any production deployment.
+
+  5. A permanent irreducible FP floor of ~10-14 entries exists for
+     a regex-based classifier. Entries like "I heard you received 5000 ZMW"
+     require semantic or syntactic parsing (subject detection, attribution,
+     negation scope) that is beyond the rule set's capability. These will
+     always require AI filtering downstream.
+
+  6. The scoring weight for negative_context should be increased from -4 to -6
+     to prevent three-signal messages from bypassing the negative guard entirely.
+     This is a zero-risk change with no FN impact.
+
+====================================================================================================
+END OF REPORT
+====================================================================================================

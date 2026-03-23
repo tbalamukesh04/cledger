@@ -1,0 +1,702 @@
+[
+  {
+    "message_text": "Received 500 ZMW from James",
+    "expected_classification": "transaction",
+    "description": "Clear credit \u2014 amount, currency, verb all present"
+  },
+  {
+    "message_text": "Paid 1200 ZMW for groceries",
+    "expected_classification": "transaction",
+    "description": "Clear debit \u2014 amount, currency, verb all present"
+  },
+  {
+    "message_text": "Sent 750 kwacha to the supplier",
+    "expected_classification": "transaction",
+    "description": "Debit with informal currency name"
+  },
+  {
+    "message_text": "Got 2000 from Mulenga today",
+    "expected_classification": "transaction",
+    "description": "Credit with relative date, no explicit currency"
+  },
+  {
+    "message_text": "Transferred K500 to Mary yesterday",
+    "expected_classification": "transaction",
+    "description": "Debit with K-prefixed informal ZMW notation and relative date"
+  },
+  {
+    "message_text": "Withdrew 3000 ZMW from the ATM",
+    "expected_classification": "transaction",
+    "description": "Debit \u2014 withdraw verb with amount and currency"
+  },
+  {
+    "message_text": "Deposited 10000 ZMW into the account",
+    "expected_classification": "transaction",
+    "description": "Credit \u2014 deposit verb with amount and currency"
+  },
+  {
+    "message_text": "Bought fuel worth 450 ZMW",
+    "expected_classification": "transaction",
+    "description": "Debit \u2014 bought verb with amount and currency"
+  },
+  {
+    "message_text": "Refunded 200 ZMW to the customer",
+    "expected_classification": "transaction",
+    "description": "Credit \u2014 refund verb with amount and currency"
+  },
+  {
+    "message_text": "Gave James 1500 ZMW for the repairs",
+    "expected_classification": "transaction",
+    "description": "Debit \u2014 gave verb with amount and currency"
+  },
+  {
+    "message_text": "Paid 3 guards 2200 ZMW each this month",
+    "expected_classification": "transaction",
+    "description": "Complex debit \u2014 multiple quantities and amounts"
+  },
+  {
+    "message_text": "Received USD 300 from the London office",
+    "expected_classification": "transaction",
+    "description": "Credit \u2014 foreign currency (USD) with verb and amount"
+  },
+  {
+    "message_text": "Sent $150 to the vendor",
+    "expected_classification": "transaction",
+    "description": "Debit \u2014 dollar symbol as currency indicator"
+  },
+  {
+    "message_text": "Spent 800 ZMW on transport last week",
+    "expected_classification": "transaction",
+    "description": "Debit \u2014 spent verb with relative date"
+  },
+  {
+    "message_text": "Credited 5000 ZMW to John's account on Monday",
+    "expected_classification": "transaction",
+    "description": "Credit \u2014 explicit credit verb with named day"
+  },
+  {
+    "message_text": "Debited 900 ZMW from account for January rent",
+    "expected_classification": "transaction",
+    "description": "Debit \u2014 explicit debit verb with month reference"
+  },
+  {
+    "message_text": "Repaid 2500 ZMW loan installment",
+    "expected_classification": "transaction",
+    "description": "Debit \u2014 repay verb with amount and currency"
+  },
+  {
+    "message_text": "Received reimbursement of 350 ZMW from HR",
+    "expected_classification": "transaction",
+    "description": "Credit \u2014 reimbursement with amount"
+  },
+  {
+    "message_text": "Transfer of 7500 ZMK completed",
+    "expected_classification": "transaction",
+    "description": "Debit \u2014 legacy ZMK currency notation"
+  },
+  {
+    "message_text": "500K received from supplier",
+    "expected_classification": "transaction",
+    "description": "Credit \u2014 informal 500K notation meaning 500 ZMW"
+  },
+  {
+    "message_text": "500",
+    "expected_classification": "non_transaction",
+    "description": "Amount only \u2014 no verb, no currency, insufficient context"
+  },
+  {
+    "message_text": "ZMW 1000",
+    "expected_classification": "non_transaction",
+    "description": "Currency and amount only \u2014 no verb or transaction context"
+  },
+  {
+    "message_text": "How much did you send?",
+    "expected_classification": "non_transaction",
+    "description": "Question \u2014 negative context via question mark"
+  },
+  {
+    "message_text": "Did you receive the 500 ZMW?",
+    "expected_classification": "non_transaction",
+    "description": "Question containing amount and currency \u2014 still non-transaction"
+  },
+  {
+    "message_text": "Should I pay the 1000 ZMW now?",
+    "expected_classification": "non_transaction",
+    "description": "Future intent question \u2014 should pay phrase triggers negative context"
+  },
+  {
+    "message_text": "Will send 2000 ZMW tomorrow",
+    "expected_classification": "non_transaction",
+    "description": "Future intent \u2014 will send phrase triggers negative context"
+  },
+  {
+    "message_text": "Planning to transfer 5000 ZMW next week",
+    "expected_classification": "non_transaction",
+    "description": "Future intent \u2014 planning to phrase triggers negative context"
+  },
+  {
+    "message_text": "Maybe transfer the 300 ZMW later",
+    "expected_classification": "non_transaction",
+    "description": "Uncertain future intent \u2014 maybe transfer triggers negative context"
+  },
+  {
+    "message_text": "You owe me 400 ZMW",
+    "expected_classification": "non_transaction",
+    "description": "Debt statement \u2014 owe triggers negative context"
+  },
+  {
+    "message_text": "Can you send 1500 ZMW to James?",
+    "expected_classification": "non_transaction",
+    "description": "Request \u2014 can you phrase triggers negative context"
+  },
+  {
+    "message_text": "What is the balance?",
+    "expected_classification": "non_transaction",
+    "description": "Balance inquiry \u2014 balance phrase triggers negative context"
+  },
+  {
+    "message_text": "What is my current balance ZMW?",
+    "expected_classification": "non_transaction",
+    "description": "Balance inquiry with currency mention \u2014 still non-transaction"
+  },
+  {
+    "message_text": "Going to pay 600 ZMW on Friday",
+    "expected_classification": "non_transaction",
+    "description": "Future intent \u2014 going to phrase triggers negative context"
+  },
+  {
+    "message_text": "He should pay the remaining 250 ZMW",
+    "expected_classification": "non_transaction",
+    "description": "Obligation framing \u2014 should pay triggers negative context"
+  },
+  {
+    "message_text": "Quote for 3 security guards is 6600 ZMW per month",
+    "expected_classification": "non_transaction",
+    "description": "Quotation \u2014 quote phrase triggers negative context"
+  },
+  {
+    "message_text": "How much is 500 ZMW in USD?",
+    "expected_classification": "non_transaction",
+    "description": "Conversion question \u2014 how much plus question mark"
+  },
+  {
+    "message_text": "Good morning everyone",
+    "expected_classification": "non_transaction",
+    "description": "Pure greeting \u2014 no financial signals at all"
+  },
+  {
+    "message_text": "Meeting at 3pm today",
+    "expected_classification": "non_transaction",
+    "description": "Scheduling message \u2014 no financial signals"
+  },
+  {
+    "message_text": "Please confirm receipt",
+    "expected_classification": "non_transaction",
+    "description": "Administrative message \u2014 no financial signals"
+  },
+  {
+    "message_text": "OK",
+    "expected_classification": "non_transaction",
+    "description": "Single word acknowledgement \u2014 no signals"
+  },
+  {
+    "message_text": "Thanks for the update",
+    "expected_classification": "non_transaction",
+    "description": "Social message \u2014 no financial signals"
+  },
+  {
+    "message_text": "The invoice is attached",
+    "expected_classification": "non_transaction",
+    "description": "Administrative reference \u2014 no amount or verb"
+  },
+  {
+    "message_text": "Stock delivered today",
+    "expected_classification": "non_transaction",
+    "description": "Logistics message \u2014 no financial signals"
+  },
+  {
+    "message_text": "Call me when you are free",
+    "expected_classification": "non_transaction",
+    "description": "Social coordination \u2014 no financial signals"
+  },
+  {
+    "message_text": "See you tomorrow at the office",
+    "expected_classification": "non_transaction",
+    "description": "Scheduling \u2014 no financial signals"
+  },
+  {
+    "message_text": "3 guards reported today",
+    "expected_classification": "non_transaction",
+    "description": "Operational status \u2014 number present but no currency or verb"
+  },
+  {
+    "message_text": "2200 per month (2 guards)",
+    "expected_classification": "transaction",
+    "description": "Amount and frequency \u2014 no verb but strong financial context via amount and currency-like structure. Borderline \u2014 expect possible FP or FN depending on threshold."
+  },
+  {
+    "message_text": "Received",
+    "expected_classification": "non_transaction",
+    "description": "Verb only \u2014 no amount, no currency, insufficient context"
+  },
+  {
+    "message_text": "Paid",
+    "expected_classification": "non_transaction",
+    "description": "Verb only \u2014 no amount, no currency"
+  },
+  {
+    "message_text": "1000 ZMW",
+    "expected_classification": "non_transaction",
+    "description": "Amount and currency only \u2014 no verb to indicate actual transaction"
+  },
+  {
+    "message_text": "Sent ZMW yesterday",
+    "expected_classification": "non_transaction",
+    "description": "Verb and date but no amount \u2014 incomplete transaction signal"
+  },
+  {
+    "message_text": "Paid 500 ZMW but will need to send 1000 ZMW more later",
+    "expected_classification": "transaction",
+    "description": "Mixed \u2014 completed transaction plus future intent in same message. Completed portion should dominate."
+  },
+  {
+    "message_text": "Received 300 ZMW. Should I deposit it?",
+    "expected_classification": "transaction",
+    "description": "Mixed \u2014 confirmed receipt followed by a question"
+  },
+  {
+    "message_text": "paid rahul 500",
+    "expected_classification": "transaction",
+    "description": "Lowercase, verb-first, no currency \u2014 minimal but valid debit signal"
+  },
+  {
+    "message_text": "sent 1200 to aman",
+    "expected_classification": "transaction",
+    "description": "Lowercase verb-first debit, no currency"
+  },
+  {
+    "message_text": "received 200 from john yesterday",
+    "expected_classification": "transaction",
+    "description": "Lowercase credit with relative date, no currency"
+  },
+  {
+    "message_text": "transferred 1500 for rent",
+    "expected_classification": "transaction",
+    "description": "Lowercase debit verb, amount, purpose \u2014 no currency"
+  },
+  {
+    "message_text": "sent \u20b91200 to aman",
+    "expected_classification": "transaction",
+    "description": "Debit with INR rupee symbol \u2014 currency symbol detection"
+  },
+  {
+    "message_text": "paid \u00a380 for the ticket",
+    "expected_classification": "transaction",
+    "description": "Debit with GBP pound symbol"
+  },
+  {
+    "message_text": "received \u20ac250 from the client",
+    "expected_classification": "transaction",
+    "description": "Credit with EUR euro symbol"
+  },
+  {
+    "message_text": "got $45 back from the refund",
+    "expected_classification": "transaction",
+    "description": "Credit with USD dollar symbol, informal got verb"
+  },
+  {
+    "message_text": "paid him five hundred ZMW",
+    "expected_classification": "transaction",
+    "description": "Debit with written-out amount \u2014 does not match digit pattern, tests regex gap"
+  },
+  {
+    "message_text": "sent about 300 ZMW",
+    "expected_classification": "transaction",
+    "description": "Debit with approximation qualifier before amount"
+  },
+  {
+    "message_text": "paid roughly 1000 ZMW for the event",
+    "expected_classification": "transaction",
+    "description": "Debit with rough approximation qualifier"
+  },
+  {
+    "message_text": "1500 ZMW was transferred to the account",
+    "expected_classification": "transaction",
+    "description": "Passive debit \u2014 amount and currency lead, verb follows"
+  },
+  {
+    "message_text": "2000 ZMW received from Peter",
+    "expected_classification": "transaction",
+    "description": "Passive credit \u2014 amount first, verb second, no subject"
+  },
+  {
+    "message_text": "850 ZMW paid for the permit",
+    "expected_classification": "transaction",
+    "description": "Passive debit \u2014 amount and currency precede verb"
+  },
+  {
+    "message_text": "The rent of 3500 ZMW was paid",
+    "expected_classification": "transaction",
+    "description": "Object-first debit \u2014 amount embedded in noun phrase"
+  },
+  {
+    "message_text": "School fees 1200 ZMW sent today",
+    "expected_classification": "transaction",
+    "description": "Object-first debit \u2014 purpose stated before amount and verb"
+  },
+  {
+    "message_text": "Fuel - 400 ZMW\nTransport - 150 ZMW\nTotal paid today",
+    "expected_classification": "transaction",
+    "description": "Multi-line expense summary with amounts and debit verb at end"
+  },
+  {
+    "message_text": "Received payment\n2750 ZMW\nFrom: David",
+    "expected_classification": "transaction",
+    "description": "Multi-line credit receipt style message"
+  },
+  {
+    "message_text": "pd 600 zmw supplier",
+    "expected_classification": "transaction",
+    "description": "Shorthand abbreviation of paid \u2014 tests regex boundary matching"
+  },
+  {
+    "message_text": "rcvd 1000 ZMW frm James",
+    "expected_classification": "transaction",
+    "description": "Abbreviated received \u2014 tests informal shorthand credit"
+  },
+  {
+    "message_text": "txfr 5000 ZMW done",
+    "expected_classification": "transaction",
+    "description": "Abbreviated transfer \u2014 tests shorthand debit"
+  },
+  {
+    "message_text": "PAID 700 ZMW FOR SUPPLIES",
+    "expected_classification": "transaction",
+    "description": "All-caps debit \u2014 case insensitivity test"
+  },
+  {
+    "message_text": "RECEIVED 3000 ZMW FROM HEAD OFFICE",
+    "expected_classification": "transaction",
+    "description": "All-caps credit \u2014 case insensitivity test"
+  },
+  {
+    "message_text": "Paid 1250.50 ZMW for materials",
+    "expected_classification": "transaction",
+    "description": "Debit with decimal amount \u2014 float detection"
+  },
+  {
+    "message_text": "Received 99.99 ZMW from the app",
+    "expected_classification": "transaction",
+    "description": "Credit with sub-100 decimal amount"
+  },
+  {
+    "message_text": "Transferred 250000 ZMW to the contractor",
+    "expected_classification": "transaction",
+    "description": "Large debit \u2014 six-digit amount"
+  },
+  {
+    "message_text": "Received 1500000 ZMW from the investor",
+    "expected_classification": "transaction",
+    "description": "Very large credit \u2014 seven-digit amount"
+  },
+  {
+    "message_text": "sent 500 ZMW",
+    "expected_classification": "transaction",
+    "description": "Minimal valid debit \u2014 verb, amount, currency only"
+  },
+  {
+    "message_text": "got 200 ZMW",
+    "expected_classification": "transaction",
+    "description": "Minimal valid credit \u2014 got verb, amount, currency"
+  },
+  {
+    "message_text": "paid 50 dollars",
+    "expected_classification": "transaction",
+    "description": "Minimal debit with written-out currency name"
+  },
+  {
+    "message_text": "Paid 800 ZMW on Wednesday",
+    "expected_classification": "transaction",
+    "description": "Debit with named weekday date"
+  },
+  {
+    "message_text": "Received 2200 ZMW in March",
+    "expected_classification": "transaction",
+    "description": "Credit with named month"
+  },
+  {
+    "message_text": "Transferred 4500 ZMW on the 15th",
+    "expected_classification": "transaction",
+    "description": "Debit with ordinal date"
+  },
+  {
+    "message_text": "Paid James 600 ZMW for fixing the gate",
+    "expected_classification": "transaction",
+    "description": "Debit with named recipient and purpose clause"
+  },
+  {
+    "message_text": "Received 1800 ZMW from Grace for the deposit",
+    "expected_classification": "transaction",
+    "description": "Credit with named sender and purpose"
+  },
+  {
+    "message_text": "Sent 320 ZMW airtime to the team",
+    "expected_classification": "transaction",
+    "description": "Debit \u2014 airtime purchase, named recipient group"
+  },
+  {
+    "message_text": "should pay him tomorrow",
+    "expected_classification": "non_transaction",
+    "description": "Future intent \u2014 should pay triggers negative context"
+  },
+  {
+    "message_text": "will pay you back on Friday",
+    "expected_classification": "non_transaction",
+    "description": "Future intent \u2014 will pay triggers negative context"
+  },
+  {
+    "message_text": "planning to transfer next week",
+    "expected_classification": "non_transaction",
+    "description": "Future intent \u2014 planning to triggers negative context"
+  },
+  {
+    "message_text": "going to send the money later today",
+    "expected_classification": "non_transaction",
+    "description": "Future intent \u2014 going to triggers negative context"
+  },
+  {
+    "message_text": "maybe I will transfer it on Monday",
+    "expected_classification": "non_transaction",
+    "description": "Uncertain future intent \u2014 maybe plus will triggers negative context"
+  },
+  {
+    "message_text": "I will send the 500 ZMW once confirmed",
+    "expected_classification": "non_transaction",
+    "description": "Future intent with amount and currency \u2014 will send triggers negative context"
+  },
+  {
+    "message_text": "planning to pay the 2000 ZMW rent next month",
+    "expected_classification": "non_transaction",
+    "description": "Future intent with amount and currency \u2014 planning to triggers negative context"
+  },
+  {
+    "message_text": "going to pay 800 ZMW for the service tomorrow",
+    "expected_classification": "non_transaction",
+    "description": "Future intent \u2014 going to pay with full financial context"
+  },
+  {
+    "message_text": "did you send the money",
+    "expected_classification": "non_transaction",
+    "description": "Past-tense question about a transaction \u2014 question mark absent but interrogative"
+  },
+  {
+    "message_text": "did you send the money?",
+    "expected_classification": "non_transaction",
+    "description": "Past-tense question with question mark \u2014 negative context via ?"
+  },
+  {
+    "message_text": "have you received the 1000 ZMW?",
+    "expected_classification": "non_transaction",
+    "description": "Verification question with amount and currency \u2014 question mark triggers negative"
+  },
+  {
+    "message_text": "has the transfer gone through?",
+    "expected_classification": "non_transaction",
+    "description": "Status question about a transfer \u2014 no amount, question mark"
+  },
+  {
+    "message_text": "when did you pay?",
+    "expected_classification": "non_transaction",
+    "description": "Timing question about payment \u2014 question mark, no amount"
+  },
+  {
+    "message_text": "how much did it cost?",
+    "expected_classification": "non_transaction",
+    "description": "Cost inquiry \u2014 how much triggers negative context"
+  },
+  {
+    "message_text": "how much should I send?",
+    "expected_classification": "non_transaction",
+    "description": "Amount clarification question \u2014 how much plus question mark"
+  },
+  {
+    "message_text": "did you get the 300 ZMW I sent?",
+    "expected_classification": "non_transaction",
+    "description": "Confirmation question referencing a prior transaction \u2014 question mark triggers"
+  },
+  {
+    "message_text": "can you send me 500 ZMW please",
+    "expected_classification": "non_transaction",
+    "description": "Request with amount and currency \u2014 can you triggers negative context"
+  },
+  {
+    "message_text": "please send the 1200 ZMW today",
+    "expected_classification": "non_transaction",
+    "description": "Instruction to send \u2014 imperative, no confirmed transaction"
+  },
+  {
+    "message_text": "make sure to transfer the money before noon",
+    "expected_classification": "non_transaction",
+    "description": "Instruction \u2014 no amount, no completed transfer"
+  },
+  {
+    "message_text": "let's split the bill",
+    "expected_classification": "non_transaction",
+    "description": "Social cost-sharing proposal \u2014 no amount, no completed transaction"
+  },
+  {
+    "message_text": "let's split the 600 ZMW equally",
+    "expected_classification": "non_transaction",
+    "description": "Cost-sharing proposal with amount and currency \u2014 no completed verb"
+  },
+  {
+    "message_text": "remind me to pay the 400 ZMW tomorrow",
+    "expected_classification": "non_transaction",
+    "description": "Reminder instruction \u2014 future payment, not a completed transaction"
+  },
+  {
+    "message_text": "can you confirm the payment was received?",
+    "expected_classification": "non_transaction",
+    "description": "Confirmation request \u2014 can you triggers negative context"
+  },
+  {
+    "message_text": "you still owe me 700 ZMW",
+    "expected_classification": "non_transaction",
+    "description": "Debt statement \u2014 owe triggers negative context"
+  },
+  {
+    "message_text": "I owe Grace 1500 ZMW for last month",
+    "expected_classification": "non_transaction",
+    "description": "Personal debt acknowledgement \u2014 owe triggers negative context"
+  },
+  {
+    "message_text": "he owes the company 5000 ZMW",
+    "expected_classification": "non_transaction",
+    "description": "Third-party debt statement \u2014 owe triggers negative context"
+  },
+  {
+    "message_text": "the remaining balance is 3200 ZMW",
+    "expected_classification": "non_transaction",
+    "description": "Balance report \u2014 balance triggers negative context"
+  },
+  {
+    "message_text": "current balance: 12500 ZMW",
+    "expected_classification": "non_transaction",
+    "description": "Balance display format \u2014 balance triggers negative context"
+  },
+  {
+    "message_text": "the quote for painting is 4500 ZMW",
+    "expected_classification": "non_transaction",
+    "description": "Pricing quote \u2014 quote triggers negative context"
+  },
+  {
+    "message_text": "estimate is around 2000 ZMW",
+    "expected_classification": "non_transaction",
+    "description": "Cost estimate \u2014 no verb, no confirmed transaction"
+  },
+  {
+    "message_text": "budget for the event is 8000 ZMW",
+    "expected_classification": "non_transaction",
+    "description": "Budget statement \u2014 no transaction verb or completed action"
+  },
+  {
+    "message_text": "the price is 350 ZMW per unit",
+    "expected_classification": "non_transaction",
+    "description": "Pricing statement \u2014 no transaction verb"
+  },
+  {
+    "message_text": "salary is 6500 ZMW per month",
+    "expected_classification": "non_transaction",
+    "description": "Compensation disclosure \u2014 no verb, not a completed transaction"
+  },
+  {
+    "message_text": "the transaction failed",
+    "expected_classification": "non_transaction",
+    "description": "Transaction failure notification \u2014 no amount, no verb, no currency"
+  },
+  {
+    "message_text": "payment not received yet",
+    "expected_classification": "non_transaction",
+    "description": "Negative confirmation \u2014 no amount, no completed credit"
+  },
+  {
+    "message_text": "the transfer is pending",
+    "expected_classification": "non_transaction",
+    "description": "Status message \u2014 no amount, no completed debit"
+  },
+  {
+    "message_text": "waiting for the money to clear",
+    "expected_classification": "non_transaction",
+    "description": "Waiting on a payment \u2014 no amount, no completed verb"
+  },
+  {
+    "message_text": "money not yet received",
+    "expected_classification": "non_transaction",
+    "description": "Negative state \u2014 no amount, no confirmed credit"
+  },
+  {
+    "message_text": "payment is overdue",
+    "expected_classification": "non_transaction",
+    "description": "Overdue notice \u2014 no amount, no completed verb"
+  },
+  {
+    "message_text": "I never got the refund",
+    "expected_classification": "non_transaction",
+    "description": "Negated credit \u2014 got verb but negated, no amount"
+  },
+  {
+    "message_text": "I heard you received 5000 ZMW",
+    "expected_classification": "non_transaction",
+    "description": "Reported speech about someone else's transaction \u2014 not a record of a completed transaction"
+  },
+  {
+    "message_text": "they said he paid 1000 ZMW already",
+    "expected_classification": "non_transaction",
+    "description": "Third-party reported payment \u2014 gossip framing, not a direct transaction record"
+  },
+  {
+    "message_text": "apparently 2000 ZMW was transferred",
+    "expected_classification": "non_transaction",
+    "description": "Hearsay passive \u2014 apparently qualifies the reported transfer"
+  },
+  {
+    "message_text": "if you pay 500 ZMW now you get a discount",
+    "expected_classification": "non_transaction",
+    "description": "Conditional offer \u2014 if framing means no completed transaction"
+  },
+  {
+    "message_text": "once you send 1200 ZMW we will proceed",
+    "expected_classification": "non_transaction",
+    "description": "Conditional instruction \u2014 once you framing, transaction not yet completed"
+  },
+  {
+    "message_text": "normally we charge 800 ZMW for this",
+    "expected_classification": "non_transaction",
+    "description": "Pricing norm \u2014 no completed transaction, just rate disclosure"
+  },
+  {
+    "message_text": "let me check the account first",
+    "expected_classification": "non_transaction",
+    "description": "Pre-action message \u2014 no financial signals completed"
+  },
+  {
+    "message_text": "I'll confirm the amount and send later",
+    "expected_classification": "non_transaction",
+    "description": "Future intent \u2014 will send triggers negative context"
+  },
+  {
+    "message_text": "the invoice total comes to 3400 ZMW",
+    "expected_classification": "non_transaction",
+    "description": "Invoice summary \u2014 amount and currency present but no transaction verb"
+  },
+  {
+    "message_text": "total cost is 2200 ZMW including delivery",
+    "expected_classification": "non_transaction",
+    "description": "Cost breakdown \u2014 no transaction verb, just a total"
+  },
+  {
+    "message_text": "we need to collect 10000 ZMW by end of month",
+    "expected_classification": "non_transaction",
+    "description": "Collection target \u2014 future goal, no completed transaction"
+  }
+]
