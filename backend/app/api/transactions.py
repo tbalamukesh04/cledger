@@ -24,9 +24,14 @@ EXPORT_CSV_HEADERS = [
     "currency",
     "remarks",
     "status",
-    "participant",
     "transaction_date",
-    "created_at"
+    "created_at",
+    "participant_id",
+    "participant_name",
+    "participant_phone",
+    "message_id",
+    "message_text",
+    "message_timestamp"
 ]
 
 @router.get("/")
@@ -38,48 +43,54 @@ async def list_transactions(
     """
     Retrieve a list of transactions with filtering, pagination, and sorting.
     """
-    # Assuming user_id maps to tenant_id in this context
     tenant_id = current_user.get("tenant_id")
     
     # Build the base query with filters, sorting, and pagination
     query = get_transactions(db, tenant_id=tenant_id, filters=filters)
     
-    # Eagerly load related entities to prevent N+1 queries during serialization
-    query = query.options(
-        joinedload(Transactions.raw_message).joinedload(RawMessages.sender)
-    )
+    if filters.limit:
+        query = query.limit(filters.limit)
     
-    # To calculate total matching records before pagination, we temporarily strip limit/offset
-    total_count = query.limit(None).offset(None).order_by(None).count()
-    
-    # Execute the paginated query
+    if filters.offset:
+        query = query.offset(filters.offset)
+
     transactions = query.all()
-    
-    # Serialize the response and enrich with joined table data
+
     serialized_transactions = []
+
     for txn in transactions:
-        txn_dict = txn.to_dict()
-        
-        # Enrich with related entities if available
+        participant_data = None
+        message_data = None
+
         if txn.raw_message:
-            txn_dict["message"] = {
-                "id": txn.raw_message.id,
-                "whatsapp_message_id": txn.raw_message.message_id,
-                "received_at": txn.raw_message.received_at.isoformat() if txn.raw_message.received_at else None,
-                "raw_text": txn.raw_message.raw_text
+            message_data = {
+                "id": txn.raw_message.message_id,
+                "text": txn.raw_message.raw_text,
+                "timestamp": txn.raw_message.received_at
             }
+
             if txn.raw_message.sender:
-                txn_dict["participant"] = {
+                participant_data = {
                     "id": txn.raw_message.sender.id,
                     "phone": txn.raw_message.sender.phone,
-                    "displayname": txn.raw_message.sender.displayname
+                    "name": txn.raw_message.sender.displayname
                 }
-                
-        serialized_transactions.append(txn_dict)
-        
+
+        serialized_transactions.append({
+            "id": txn.id,
+            "amount": txn.amount,
+            "currency": txn.currency,
+            "remarks": txn.remarks,
+            "status": txn.status,
+            "transaction_date": txn.txn_date,
+            "created_at": txn.created_at,
+            "participant": participant_data,
+            "message": message_data
+        })
+
     return {
-        "limit": filters.limit,
-        "offset": filters.offset,
+        "limit": filters.limit, 
+        "offset": filters.offset, 
         "transactions": serialized_transactions
     }
 

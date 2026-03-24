@@ -5,19 +5,18 @@ from decimal import Decimal
 from enum import Enum
 
 class ParticipantDetail(BaseModel):
-    id: int
-    phone: str
-    displayname: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
-    model_config = ConfigDict(from_attributes=True)
+    participant_id: int = Field(alias="id")
+    participant_name: Optional[str] = Field(None, alias="displayname")
+    participant_phone: str = Field(alias="phone")
 
 class MessageMetadata(BaseModel):
-    id: int
-    whatsapp_message_id: str
-    received_at: Optional[datetime] = None
-    raw_text: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
-    model_config = ConfigDict(from_attributes=True)
+    message_id: int
+    message_text: str = Field(alias="raw_text")
+    message_timestamp: Optional[datetime] = Field(alias="received_at")
 
 class AuditHistoryResponse(BaseModel):
     id: int
@@ -68,10 +67,9 @@ class TransactionDetail(BaseModel):
         raw_msg = getattr(values, "raw_message", None)
         if raw_msg:
             res["message_metadata"] = MessageMetadata(
-                id=raw_msg.id,
-                whatsapp_message_id=getattr(raw_msg, "message_id", ""),
-                received_at=getattr(raw_msg, "received_at", None),
-                raw_text=getattr(raw_msg, "raw_text", None)
+                message_id=getattr(raw_msg, "id", ""),
+                message_timestamp=getattr(raw_msg, "received_at", None),
+                message_text=getattr(raw_msg, "raw_text", "")
             )
             sender = getattr(raw_msg, "sender", None)
             if sender:

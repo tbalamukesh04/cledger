@@ -1,5 +1,5 @@
 from typing import Optional, Dict, Any
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, contains_eager
 from app.models.transactions import Transactions, TransactionStatus
 from app.models.transaction_audit import TransactionAudit, TransactionAuditAction
 from app.models.raw_messages import RawMessages
@@ -13,7 +13,13 @@ def get_transactions(db: Session, tenant_id: int, filters: TransactionQueryParam
     """
     Builds and returns a SQLAlchemy query for transactions based on provided filters.
     """
-    query = db.query(Transactions).filter(Transactions.tenant_id == tenant_id)
+    query = db.query(Transactions).join(
+        RawMessages, Transactions.raw_message_id == RawMessages.id, isouter=True
+    ).join(
+        Participants, RawMessages.participant_id == Participants.id, isouter=True
+    ).options(
+        contains_eager(Transactions.raw_message).contains_eager(RawMessages.sender)
+    ).filter(Transactions.tenant_id == tenant_id)
     
     if filters.status:
         query = query.filter(Transactions.status == filters.status)
@@ -34,9 +40,7 @@ def get_transactions(db: Session, tenant_id: int, filters: TransactionQueryParam
         query = query.filter(Transactions.currency == filters.currency)
 
     if filters.participant:
-        query = query.join(RawMessages, Transactions.raw_message_id == RawMessages.id) \
-                     .join(Participants, RawMessages.participant_id == Participants.id) \
-                     .filter(or_(Participants.displayname.ilike(f"%{filters.participant}%"),
+        query = query.filter(or_(Participants.displayname.ilike(f"%{filters.participant}%"),
                                  Participants.phone.ilike(f"%{filters.participant}%")))
     
     sort_mapping = {
@@ -71,11 +75,15 @@ def get_transaction_by_id(db: Session, transaction_id: int, tenant_id: int) -> O
     """
     Fetch a transaction by its ID and tenant_id, eagerly loading related entities.
     """
-    return db.query(Transactions).filter(
-        Transactions.id == transaction_id, 
-        Transactions.tenant_id == tenant_id
+    return db.query(Transactions).join(
+        RawMessages, Transactions.raw_message_id == RawMessages.id, isouter = True
+    ).join(
+        Participants, RawMessages.participant_id == Participants.id, isouter = True
     ).options(
-        joinedload(Transactions.raw_message).joinedload(RawMessages.sender)
+        contains_eager(Transactions.raw_message).contains_eager(RawMessages.sender)
+    ).filter(
+        Transactions.id == transaction_id,
+        Transacitons.tenant_id == tenant_id
     ).first()
 
 def get_transaction_audit_history(db: Session, transaction_id: int):
