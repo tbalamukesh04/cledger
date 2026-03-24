@@ -100,7 +100,17 @@ async def export_transactions_csv(
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
+    from app.core.config import api_security_settings
+
     tenant_id = current_user.get("tenant_id")
+    query = get_transactions(db, tenant_id=tenant_id, filters=filters)
+
+    total_count = query.count()
+    if total_count > api_security_settings.MAX_EXPORT_ROWS:
+        raise HTTPException(
+            status_code = 413, 
+            detail = f"Export payload too large. Maximum {api_security_settings.MAX_EXPORT_ROWS} rows allowed."
+        )
 
     transaction_stream = stream_transactions(
         db = db,

@@ -3,6 +3,9 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from fastapi import HTTPException
+from app.core.config import api_security_settings
+from app.models.transactions import TransactionStatus
 
 class ParticipantDetail(BaseModel):
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
@@ -126,3 +129,33 @@ class TransactionQueryParams(BaseModel):
     offset: int = Field(0, ge=0, description="Number of records to skip")
     sort_by: str = Field("created_at", description="Field to sort by (e.g., created_at, txn_date, amount)")
     sort_order: str = Field("desc", description="Sort order (asc or desc)")
+
+    @model_validator(mode="after")
+    def enforce_pagination_limits(self):
+        if self.limit > api_security_settings.MAX_PAGINATION_LIMIT:
+            raise HTTPException(status_code=400, detail=f"Limit exceeds maximum allowed value of {api_security_settings.MAX_PAGINATION_LIMIT}")
+        if self.limit < 1:
+            raise HTTPException(status_code=400, detail="Limit must be at least 1")
+        if self.offset < 0:
+            raise HTTPException(status_code=400, detail="Offset must be non-negative")
+        
+        if self.date_from and self.date_to  and self.date_from > self.date_to:
+            raise HTTPException(status_code=400, detail="date_from must be before date_to")
+
+        if self.amount_min is not None and self.amount_max is not None and self.amount_min > self.amount_max:
+            raise HTTPException(status_code=400, detail="amount_min must be less than or equal to amount_max")
+        
+        if self.amount_min is not None and self.amount_min < 0:
+            raise HTTPException(status_code=400, detail="amount_min must be non-negative")
+        
+        if self.amount_max is not None and self.amount_max < 0:
+            raise HTTPException(status_code=400, detail="amount_max must be non-negative")
+        
+        if self.status:
+            valid_statuses = [e.value for e in TransactionStatus]
+            if self.status not in valid_statuses:
+                raise HTTPException(status_code=400, detail=f"Invalid status. Allowed values: {', '.join(valid_statuses)}")
+        
+        if self.participant and len(self.participant.strip()) < 2:
+            raise HTTPException(status_code=400, detail="Participant name or phone must be at least 2 characters long")
+        return self

@@ -13,6 +13,7 @@ from app.api.admin import router as admin_router
 from app.api.export import router as export_router
 from app.api.transactions_admin import router as transactions_admin_router
 from app.api.transactions import router as transactions_router
+from app.middleware.rate_limiter import RateLimitMiddleware
 
 setup_logging()
 logging.basicConfig(
@@ -63,6 +64,11 @@ app = FastAPI(
     redoc_url = "/redoc",
     lifespan=lifespan
 )
+
+app.add_middleware(RateLimitMiddleware)
+
+from app.utils.api_errors import setup_exception_handlers
+setup_exception_handlers(app)
 
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(webhook_router, prefix="/api/v1")
