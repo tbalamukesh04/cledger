@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from app.core.auth_dependencies import get_current_user, require_admin
 from app.api.dependencies import get_db
 from app.schemas.transactions import TransactionQueryParams, SingleTransactionResponse, TransactionReviewRequest, ReviewAction
-from app.crud.transaction_crud import get_transactions, get_transaction_by_id, get_transaction_audit_history
+from app.crud.transaction_crud import get_transactions, get_transaction_by_id, get_transaction_audit_history, stream_transactions
 from app.models.transactions import Transactions, TransactionStatus
 from app.models.raw_messages import RawMessages
 from app.services.transaction_correction_service import correct_transaction_service, invalidate_transaction_service
+from app.services.transaction_csv_export import generate_transaction_csv_rows
 from typing import Dict, Any
 
 # Securing the entire router. All endpoints in this file will now require a valid JWT.
@@ -15,6 +17,17 @@ router = APIRouter(
     tags=["Transactions"],
     dependencies=[Depends(get_current_user)]
 )
+
+EXPORT_CSV_HEADERS = [
+    "transaction_id",
+    "amount",
+    "currency",
+    "remarks",
+    "status",
+    "participant",
+    "transaction_date",
+    "created_at"
+]
 
 @router.get("/")
 async def list_transactions(
@@ -69,6 +82,31 @@ async def list_transactions(
         "offset": filters.offset,
         "transactions": serialized_transactions
     }
+
+@router.get("/export")
+async def export_transactions_csv(
+    filters: TransactionQueryParams = Depends(),
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    tenant_id = current_user.get("tenant_id")
+
+    transaction_stream = stream_transactions(
+        db = db,
+        tenant_id = tenant_id,
+        filters = filters,
+        batch_size=1000
+    )
+
+    csv_generator = generate_transaction_csv_rows(transaction_stream, EXPORT_CSV_HEADERS)
+
+    return StreamingResponse(
+        content = csv_generator,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=transactions.csv"
+        }
+    )
 
 @router.get("/{transaction_id}", response_model=SingleTransactionResponse)
 async def get_single_transaction(

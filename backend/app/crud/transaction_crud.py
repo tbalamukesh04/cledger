@@ -56,6 +56,17 @@ def get_transactions(db: Session, tenant_id: int, filters: TransactionQueryParam
 
     return query
 
+def stream_transactions(db: Session, tenant_id: int, filters: TransactionQueryParams, batch_size: int = 1000):
+    query = get_transactions(db, tenant_id=tenant_id, filters=filters)
+    query = query.limit(None).offset(None)
+
+    query = query.options(
+        joinedload(Transactions.raw_message).joinedload(RawMessages.sender)
+    )
+
+    for transaction in query.yield_per(batch_size):
+        yield transaction
+
 def get_transaction_by_id(db: Session, transaction_id: int, tenant_id: int) -> Optional[Transactions]:
     """
     Fetch a transaction by its ID and tenant_id, eagerly loading related entities.
