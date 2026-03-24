@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, model_validator, ConfigDict
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from decimal import Decimal
+from enum import Enum
 
 class ParticipantDetail(BaseModel):
     id: int
@@ -96,6 +97,22 @@ class TransactionCorrectionRequest(BaseModel):
     txn_date: Optional[datetime] = Field(None, description="Corrected transaction date")
     remarks: Optional[str] = Field(None, description="Remarks for correction")
 
+class ReviewAction(str, Enum):
+    CORRECT = "correct"
+    INVALIDATE = "invalidate"
+    
+class TransactionReviewRequest(BaseModel):
+    action: ReviewAction = Field(..., description = "Fields to modify if action is correct")
+    corrected_fields: Optional[Dict[str, Any]] = Field(None, description = "Fields to modify if action is correct")
+    
+    @model_validator(mode="after")
+    def validate_action_fields(self):
+        if self.action == ReviewAction.CORRECT and not self.corrected_fields:
+            raise ValueError("corrected_fields is required when action is 'correct'")
+        if self.action == ReviewAction.INVALIDATE and self.corrected_fields:
+            raise ValueError("corrected_fields must be empty when action is 'invalidate'")
+        return self
+        
 class TransactionInvalidationRequest(BaseModel):
     reason: Optional[str] = Field(None, description="Reason for invalidation")
 
