@@ -81,5 +81,16 @@ app.include_router(transactions_router, prefix="/api/v1")
 async def root():
     return {"message": "Welcome to Cledger API"}
 
+@app.get("/dev-token", tags=["Root"])
+async def get_dev_token():
+    """
+    Temporary unprotected endpoint to generate a valid JWT token 
+    for Flutter E2E testing.
+    """
+    from app.core.jwt_utils import create_access_token
+    # Signed with the server's actual SECRET_KEY
+    token = create_access_token(user_id=1, tenant_id=1, role="admin")
+    return {"access_token": token}
+
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host= "0.0.0.0", port=8000, reload=True)

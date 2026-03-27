@@ -16,7 +16,7 @@ def get_transactions(db: Session, tenant_id: int, filters: TransactionQueryParam
     query = db.query(Transactions).join(
         RawMessages, Transactions.raw_message_id == RawMessages.id, isouter=True
     ).join(
-        Participants, RawMessages.participant_id == Participants.id, isouter=True
+        Participants, RawMessages.sender_id == Participants.id, isouter=True
     ).options(
         contains_eager(Transactions.raw_message).contains_eager(RawMessages.sender)
     ).filter(Transactions.tenant_id == tenant_id)
@@ -83,7 +83,7 @@ def get_transaction_by_id(db: Session, transaction_id: int, tenant_id: int) -> O
         contains_eager(Transactions.raw_message).contains_eager(RawMessages.sender)
     ).filter(
         Transactions.id == transaction_id,
-        Transacitons.tenant_id == tenant_id
+        Transactions.tenant_id == tenant_id
     ).first()
 
 def get_transaction_audit_history(db: Session, transaction_id: int):
