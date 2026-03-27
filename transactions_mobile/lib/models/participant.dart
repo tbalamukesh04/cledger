@@ -11,9 +11,11 @@ class Participant {
 
     factory Participant.fromJson(Map<String, dynamic> json) {
         return Participant(
-            id: json['id'] as int, 
-            name: json['displayname'] as String?,
-            phone: json['phone'] as String,
+            // Use ?? to provide a safe fallback if id is null
+            id: json['id'] != null ? int.parse(json['id'].toString()) : 0, 
+            name: json['displayname']?.toString(),
+            // Provide a safe fallback string if phone is missing
+            phone: json['phone']?.toString() ?? 'Unknown Phone',
         );
     }
 

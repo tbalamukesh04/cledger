@@ -18,7 +18,7 @@ class MessageMetadata(BaseModel):
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
     message_id: int
-    message_text: str = Field(alias="raw_text")
+    message_text: Optional[str] = Field(alias="raw_text")
     message_timestamp: Optional[datetime] = Field(alias="received_at")
 
 class AuditHistoryResponse(BaseModel):

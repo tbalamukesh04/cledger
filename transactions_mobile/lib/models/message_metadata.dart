@@ -11,11 +11,13 @@ class MessageMetadata {
 
     factory MessageMetadata.fromJson(Map<String, dynamic> json) {
         return MessageMetadata(
-            id: json['message_id'] as int,
-            text: json['raw_text'] as String,
+            // Use ?? to provide a safe fallback if id is null
+            id: json['message_id'] != null ? int.parse(json['message_id'].toString()) : 0,
+            // Provide a safe fallback string if raw_text is missing
+            text: json['raw_text']?.toString() ?? 'No text available',
             timestamp: json['received_at'] != null 
-            ? DateTime.parse(json['received_at'] as String)
-            : null,
+                ? DateTime.tryParse(json['received_at'].toString())
+                : null,
         );
     }
 

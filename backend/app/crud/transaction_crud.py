@@ -78,7 +78,7 @@ def get_transaction_by_id(db: Session, transaction_id: int, tenant_id: int) -> O
     return db.query(Transactions).join(
         RawMessages, Transactions.raw_message_id == RawMessages.id, isouter = True
     ).join(
-        Participants, RawMessages.participant_id == Participants.id, isouter = True
+        Participants, RawMessages.sender_id == Participants.id, isouter = True
     ).options(
         contains_eager(Transactions.raw_message).contains_eager(RawMessages.sender)
     ).filter(

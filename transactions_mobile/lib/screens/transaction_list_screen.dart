@@ -1,10 +1,9 @@
-// File: lib/screens/transaction_list_screen.dart
-
 import 'package:flutter/material.dart';
 import '../models/transaction.dart';
 import '../services/api_service.dart';
 import '../services/api_client.dart';
 import '../repositories/transaction_repository.dart';
+import 'transaction_detail_screen.dart';
 
 class TransactionListScreen extends StatefulWidget {
   const TransactionListScreen({super.key});
@@ -205,6 +204,16 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
+                            onTap: () {
+                                Navigator.push(
+                                    context, 
+                                    MaterialPageRoute(
+                                        builder: (context) => TransactionDetailScreen(
+                                            transaction: txn
+                                        ),
+                                    ),
+                                );
+                            },
                           ),
                         );
                       },

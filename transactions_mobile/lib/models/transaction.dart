@@ -36,20 +36,23 @@ class Transaction {
     return Transaction(
       id: json['id'] as int,
       rawMessageId: json['raw_message_id'] as int?,
-      // Use num to safely handle both int and double JSON parsing for amount
-      amount: json['amount'] != null ? (json['amount'] as num).toDouble() : null,
+      amount: json['amount'] != null ? double.tryParse(json['amount'].toString()) : null,
       currency: json['currency'] as String?,
       remarks: json['remarks'] as String?,
       txnDate: json['txn_date'] != null 
-          ? DateTime.parse(json['txn_date'] as String) 
+          ? DateTime.tryParse(json['txn_date'].toString()) 
           : null,
       status: json['status']?.toString(), // Handle potential enum or string
+      // Safely parse confidence whether it arrives as a number or a string
       confidence: json['confidence'] != null 
-          ? (json['confidence'] as num).toDouble() 
+          ? double.tryParse(json['confidence'].toString()) 
           : null,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      // Provide a fallback of DateTime.now() if the backend omits created_at
+      createdAt: json['created_at'] != null 
+          ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
+          : DateTime.now(),
       updatedAt: json['updated_at'] != null 
-          ? DateTime.parse(json['updated_at'] as String) 
+          ? DateTime.tryParse(json['updated_at'].toString()) 
           : null,
       // Nested Parsing
       participant: json['participant'] != null 

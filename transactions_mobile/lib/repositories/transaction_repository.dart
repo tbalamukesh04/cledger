@@ -14,9 +14,11 @@ class TransactionRepository {
         .toList();
     }
 
-    Future<Transaction> fetchTransaction(String id) async {
-        final rawData = await apiClient.getTransaction(id);
+    Future<Transaction> fetchTransaction(int id) async {
+        final rawData = await apiClient.getTransaction(id.toString());
 
-        return Transaction.fromJson(rawData as Map<String, dynamic>);
+        final Map<String, dynamic> transactionData = rawData['transaction'] ?? rawData;
+
+        return Transaction.fromJson(transactionData);
     }
 }
