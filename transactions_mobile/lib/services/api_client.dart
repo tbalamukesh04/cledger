@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
 
-/// A custom exception class to handle standardized API errors from the backend (Phase 7).
+/// A custom exception class to handle standardized API errors from the backend.
 class ApiException implements Exception {
   final int statusCode;
   final String message;
@@ -18,17 +18,22 @@ class ApiClient {
   ApiClient(this._client);
 
   /// Retrieves a list of transactions from the backend.
-  Future<List<dynamic>> getTransactions() async {
+  Future<List<dynamic>> getTransactions({int limit = 50, int offset = 0}) async {
     final response = await request(
       '/api/v1/transactions/', // Matches the Phase 7 backend router prefix
       method: 'GET',
+      queryParameters: {
+        'limit': limit,
+        'offset': offset,
+      },
     );
     
     // Safely extract the list depending on if the backend returns a raw array 
-    // or wraps it in a paginated dictionary (e.g., {'items': [...]})
+    // or wraps it in a paginated dictionary (e.g., {'transactions': [...]})
     if (response is List) {
       return response;
     } else if (response is Map<String, dynamic>) {
+      if (response.containsKey('transactions')) return response['transactions'] as List<dynamic>;
       if (response.containsKey('items')) return response['items'] as List<dynamic>;
       if (response.containsKey('data')) return response['data'] as List<dynamic>;
     }
@@ -56,19 +61,16 @@ class ApiClient {
   }
 
   /// Triggers a CSV export of the transactions.
-  /// Returns the raw CSV data as a String (file saving to be implemented later).
   Future<String> exportTransactions() async {
     final response = await request(
       '/api/v1/transactions/export',
       method: 'GET',
     );
     
-    // Dio automatically parses text/csv into a string
     return response.toString();
   }
 
   /// Base HTTP request wrapper
-  /// Handles methods, JSON decoding (automatic in Dio), and standardized error parsing.
   Future<dynamic> request(
     String endpoint, {
     String method = 'GET',
@@ -76,7 +78,6 @@ class ApiClient {
     Map<String, dynamic>? queryParameters,
   }) async {
     try {
-      // Execute the request. Headers (Content-Type) are already attached via ApiService.
       final response = await _client.request(
         endpoint,
         data: data,
@@ -84,23 +85,19 @@ class ApiClient {
         options: Options(method: method),
       );
       
-      // 2xx responses (Success). Dio automatically decodes the JSON payload.
       return response.data;
 
     } on DioException catch (e) {
-      // Handle HTTP errors specifically aligning with UI requirements
       if (e.response != null) {
         final statusCode = e.response!.statusCode ?? 500;
         final responseData = e.response!.data;
         
-        // 1. Try to extract the standardized error from Phase 7 backend schema
         String? backendMessage;
         if (responseData is Map<String, dynamic>) {
            backendMessage = responseData['detail']?.toString() ?? 
                             responseData['message']?.toString();
         }
 
-        // 2. Map status codes to readable messages for UI handling (Fallback)
         String errorMessage;
         switch (statusCode) {
           case 400:
@@ -127,14 +124,12 @@ class ApiClient {
           data: responseData,
         );
       } else {
-        // Network errors, timeouts, or connection refused
         throw ApiException(
           statusCode: 500,
           message: 'Network error or timeout: Please check your internet connection.',
         );
       }
     } catch (e) {
-      // Fallback for any other unexpected Dart errors
       throw ApiException(
         statusCode: 500,
         message: 'Unexpected application error: $e',
