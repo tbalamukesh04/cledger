@@ -105,6 +105,7 @@ class ReviewAction(str, Enum):
 class TransactionReviewRequest(BaseModel):
     action: ReviewAction = Field(..., description = "Fields to modify if action is correct")
     corrected_fields: Optional[Dict[str, Any]] = Field(None, description = "Fields to modify if action is correct")
+    reason: Optional[str] = Field(None, description = "Reason for invalidation")
     
     @model_validator(mode="after")
     def validate_action_fields(self):

@@ -3,6 +3,7 @@ import '../models/transaction.dart';
 import '../services/api_service.dart';
 import '../services/api_client.dart';
 import '../repositories/transaction_repository.dart';
+import 'transaction_edit_screen.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
   final Transaction transaction;
@@ -29,8 +30,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     
     // 2. Setup repository to fetch fresh data
     final apiService = ApiService();
-    // TODO: Replace with secure token retrieval
-    const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc3NDY4ODM5OH0.ObZy2bhwkZuxaBOjk6LrSepQjEBhPxUlU3xoHWC8fRk";
+    const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc3NDc4MDE3NH0.X7n1kaJL_-J8x0bb4IckDpYbXXjKGoGHqzOvQQx6ySE";
     apiService.client.options.headers['Authorization'] = 'Bearer $testToken';
     final apiClient = ApiClient(apiService.client);
     repository = TransactionRepository(apiClient: apiClient);
@@ -38,13 +38,12 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     // 3. Optionally fetch latest data in the background on load
     _fetchLatestTransaction();
   }
-
+    
   Future<void> _fetchLatestTransaction() async {
     if (!mounted) return;
     setState(() => _isRefreshing = true);
     
     try {
-      // NOTE: Ensure your TransactionRepository has a method named 'fetchTransaction' or update this call to match it.
       final freshData = await repository.fetchTransaction(_transaction.id);
       if (mounted) {
         setState(() {
@@ -92,7 +91,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Transaction #${_transaction.id}'),
-        actions: [
+          actions: [
           // Subtle loading indicator in AppBar during background fetch
           if (_isRefreshing)
             const Center(
@@ -105,6 +104,25 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 ),
               ),
             ),
+          IconButton(
+            icon: const Icon(Icons.edit),
+            tooltip: 'Review & Edit Transaction',
+            onPressed: () async {
+              final updatedTxn = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => TransactionEditScreen(transaction: _transaction),
+                ),
+              );
+              
+              // If the edit screen pops back with an updated transaction, refresh the UI
+              if (updatedTxn != null && updatedTxn is Transaction) {
+                setState(() {
+                  _transaction = updatedTxn;
+                });
+              }
+            },
+          ),
         ],
       ),
       body: SafeArea(

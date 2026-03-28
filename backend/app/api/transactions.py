@@ -10,6 +10,7 @@ from app.models.raw_messages import RawMessages
 from app.services.transaction_correction_service import correct_transaction_service, invalidate_transaction_service
 from app.services.transaction_csv_export import generate_transaction_csv_rows
 from typing import Dict, Any
+from datetime import datetime
 
 # Securing the entire router. All endpoints in this file will now require a valid JWT.
 router = APIRouter(
@@ -167,12 +168,6 @@ async def review_transaction(
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
         
-    if transaction.status != TransactionStatus.REVIEW_NEEDED:
-        raise HTTPException(
-            status_code=400,
-            detail="Transaction is not in REVIEW_NEEDED state"
-        )
-    
     if review_request.action == ReviewAction.CORRECT:
         if not review_request.corrected_fields:
             raise HTTPException(status_code=400, detail="corrected_fields is required when action is 'correct'")
@@ -180,6 +175,16 @@ async def review_transaction(
     actor_identifier = current_user.get("sub", "admin_user")
 
     if review_request.action == ReviewAction.CORRECT:
+        
+        # Safely convert the incoming ISO string to a Python datetime object
+        # so the SQLAlchemy models and Audit services don't crash.
+        if review_request.corrected_fields and "txn_date" in review_request.corrected_fields:
+            date_val = review_request.corrected_fields["txn_date"]
+            if isinstance(date_val, str):
+                # Replace 'Z' if present, as standard fromisoformat prefers +00:00
+                clean_date = date_val.replace("Z", "+00:00")
+                review_request.corrected_fields["txn_date"] = datetime.fromisoformat(clean_date)
+
         try:
             updated_transaction = correct_transaction_service(
                 db = db,
@@ -187,6 +192,7 @@ async def review_transaction(
                 correction_data = review_request.corrected_fields,
                 actor_identifier = actor_identifier
             )
+            
             if not updated_transaction:
                 raise HTTPException(status = 500, detail = "Failed to correct transaction")
             db.commit()
@@ -200,6 +206,7 @@ async def review_transaction(
             updated_transaction = invalidate_transaction_service(
                 db = db,
                 transaction_id= transaction_id,
+                reason= review_request.reason,
                 actor_identifier = actor_identifier
             )
             if not updated_transaction:
