@@ -9,11 +9,13 @@ class CacheService {
 
   Future<void> saveTransactions(List<Transaction> transactions) async {
     // Convert the list into a map with the transaction ID as the key
-    // This ensures updates overwrite existing items instead of duplicating
     final Map<int, Transaction> transactionsMap = {
       for (var txn in transactions) txn.id: txn
     };
     
+    // Enforce Overwrite Strategy: Clear stale cache before saving fresh data
+    // This prevents partial merges and removes items deleted on the server
+    await _box.clear();
     await _box.putAll(transactionsMap);
   }
 

@@ -17,6 +17,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   List<Transaction> _transactions = [];
   bool _isLoading = false;
   bool _isFetchingMore = false;
+  bool _isSyncing = false;
   bool _hasMore = true;
   int _offset = 0;
   final int _limit = 50;
@@ -33,7 +34,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     
     // Temporarily inject the test token to resolve the 401 Unauthorized error.
     // TODO: Replace with dynamic token retrieval from secure storage in future steps.
-    const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc3NDc4MDE3NH0.X7n1kaJL_-J8x0bb4IckDpYbXXjKGoGHqzOvQQx6ySE";
+    const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc3NDgwNTQ5OH0.1mW-fe-JOFs5wLDihFYsxox3NvvK82t3bMVRfoYLr9Y";
     apiService.client.options.headers['Authorization'] = 'Bearer $testToken';
 
     final apiClient = ApiClient(apiService.client);
@@ -65,25 +66,46 @@ Future<void> _fetchTransactions() async {
         _offset = cachedTransactions.length;
         _hasMore = cachedTransactions.length >= _limit;
       });
+    } else {
+      // Only show full loading spinner if cache is completely empty
+      setState(() {
+        _isLoading = true;
+      });
     }
 
-    // 2. Fetch fresh data from the API in the background
+    // 2. Trigger the dedicated background sync
+    await _syncInBackground();
+
+    // Turn off loading indicator if it was turned on
+    if (mounted && _isLoading) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _syncInBackground() async {
+    if (_isSyncing) return; // Guard against duplicate calls
+
     setState(() {
-      _isLoading = true;
+      _isSyncing = true;
     });
 
     try {
-      final results = await repository.fetchTransactions(limit: _limit, offset: 0);
-      
-      setState(() {
-        _transactions = results;
-        _offset = results.length;
-        _hasMore = results.length >= _limit;
-      });
-    } catch (e) {
+      final fresh = await repository.syncTransactions(limit: _limit, offset: 0);
       if (mounted) {
-        // Since we already have cached data, we can just silently fail 
-        // or show a less intrusive "Offline Mode" indicator.
+        setState(() {
+          _transactions = fresh;
+          _offset = fresh.length;
+          _hasMore = fresh.length >= _limit;
+        });
+      }
+    } catch (e) {
+      // Fail silently, keep cached data
+      print("--> [UI] Background sync failed silently: $e");
+      
+      if (mounted && _transactions.isNotEmpty) {
+        // Show a subtle indicator that we are in offline mode
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Offline: Showing cached transactions')),
         );
@@ -91,31 +113,34 @@ Future<void> _fetchTransactions() async {
     } finally {
       if (mounted) {
         setState(() {
-          _isLoading = false;
+          _isSyncing = false;
         });
       }
     }
   }
 
   Future<void> _refreshTransactions() async {
-    // Reset pagination state
-    setState(() {
-      _offset = 0;
-      _hasMore = true;
-    });
-    
+    if (_isSyncing) return; // Prevent manual refresh if already syncing in background
+
     try {
-      final results = await repository.fetchTransactions(limit: _limit, offset: 0);
+      // Use syncTransactions to ensure cache is updated on manual refresh
+      final results = await repository.syncTransactions(limit: _limit, offset: 0);
       
-      setState(() {
-        _transactions = results;
-        _offset = results.length;
-        _hasMore = results.length >= _limit;
-      });
+      // ONLY update state if the network call was completely successful
+      if (mounted) {
+        setState(() {
+          _transactions = results;
+          _offset = results.length;
+          _hasMore = results.length >= _limit;
+        });
+      }
     } catch (e) {
+      // Fail gracefully: Do not overwrite UI state, retain cached data
+      print("--> [UI] Manual refresh failed: $e");
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to refresh transactions: $e')),
+          const SnackBar(content: Text('Offline: Cannot refresh right now. Showing cached data.')),
         );
       }
     }
@@ -160,6 +185,19 @@ Future<void> _fetchTransactions() async {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Transactions'),
+        actions: [
+          if (_isSyncing)
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                ),
+              ),
+            ),
+        ],
       ),
       body: _isLoading && _transactions.isEmpty
           ? const Center(child: CircularProgressIndicator())

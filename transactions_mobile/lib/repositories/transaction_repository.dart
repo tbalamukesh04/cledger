@@ -13,19 +13,10 @@ class TransactionRepository {
     return cacheService.getTransactions();
   }
 
-  Future<List<Transaction>> fetchTransactions({int limit = 50, int offset = 0}) async {
-  try {
-    await Future.delayed(const Duration(seconds: 3)); 
-    final rawList = await apiClient.getTransactions(limit: limit, offset: offset);
-
-      final transactions = rawList
-          .map((json) => Transaction.fromJson(json as Map<String, dynamic>))
-          .toList();
-          
-      // Save fresh data to local cache
-      await cacheService.saveTransactions(transactions);
-      
-      return transactions;
+Future<List<Transaction>> fetchTransactions({int limit = 50, int offset = 0}) async {
+    try {
+      await Future.delayed(const Duration(seconds: 3)); // Simulated latency
+      return await syncTransactions(limit: limit, offset: offset);
     } catch (e) {
       print("--> [Repository] Network fetch failed. Falling back to cache: $e");
       
@@ -39,6 +30,21 @@ class TransactionRepository {
           
       return cachedTransactions.sublist(offset, end);
     }
+  }
+
+  /// Dedicated sync method: Fetches fresh data from API and instantly updates the cache
+  Future<List<Transaction>> syncTransactions({int limit = 50, int offset = 0}) async {
+    print("--> [Repository] Executing background sync from API...");
+    final rawList = await apiClient.getTransactions(limit: limit, offset: offset);
+
+    final transactions = rawList
+        .map((json) => Transaction.fromJson(json as Map<String, dynamic>))
+        .toList();
+        
+    // Save fresh data to local cache overriding old entries
+    await cacheService.saveTransactions(transactions);
+    
+    return transactions;
   }
 
   Future<Transaction> fetchTransaction(int id) async {
