@@ -1,20 +1,36 @@
 import 'participant.dart';
 import 'message_metadata.dart';
+import 'package:hive/hive.dart';
+
+part 'transaction.g.dart';
+@HiveType(typeId: 0)
 
 class Transaction {
+  @HiveField(0)
   final int id;
+  @HiveField(1)
   final int? rawMessageId;
+  @HiveField(2)
   final double? amount;
+  @HiveField(3)
   final String? currency;
+  @HiveField(4)
   final String? remarks;
+  @HiveField(5)
   final DateTime? txnDate;
+  @HiveField(6)
   final String? status;
+  @HiveField(7)
   final double? confidence;
+  @HiveField(8)
   final DateTime createdAt;
+  @HiveField(9)
   final DateTime? updatedAt;
   
   // Nested Objects
+  @HiveField(10)
   final Participant? participant;
+  @HiveField(11)
   final MessageMetadata? messageMetadata;
 
   Transaction({

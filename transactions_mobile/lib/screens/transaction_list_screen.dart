@@ -56,7 +56,18 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     }
   }
 
-  Future<void> _fetchTransactions() async {
+Future<void> _fetchTransactions() async {
+    // 1. Instantly load from cache to populate the UI immediately
+    final cachedTransactions = repository.getCachedTransactions();
+    if (cachedTransactions.isNotEmpty) {
+      setState(() {
+        _transactions = cachedTransactions;
+        _offset = cachedTransactions.length;
+        _hasMore = cachedTransactions.length >= _limit;
+      });
+    }
+
+    // 2. Fetch fresh data from the API in the background
     setState(() {
       _isLoading = true;
     });
@@ -71,8 +82,10 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
       });
     } catch (e) {
       if (mounted) {
+        // Since we already have cached data, we can just silently fail 
+        // or show a less intrusive "Offline Mode" indicator.
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load transactions: $e')),
+          const SnackBar(content: Text('Offline: Showing cached transactions')),
         );
       }
     } finally {

@@ -1,6 +1,13 @@
+import 'package:hive/hive.dart';
+
+part 'message_metadata.g.dart';
+@HiveType(typeId: 2)
 class MessageMetadata {
+    @HiveField(0)
     final int id;
+    @HiveField(1)
     final String text;
+    @HiveField(2)
     final DateTime? timestamp;
 
     MessageMetadata({
