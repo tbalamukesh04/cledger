@@ -3,6 +3,7 @@ import '../models/transaction.dart';
 import '../services/api_service.dart';
 import '../services/api_client.dart';
 import '../repositories/transaction_repository.dart';
+import '../services/csv_export_service.dart';
 import 'transaction_detail_screen.dart';
 
 class TransactionListScreen extends StatefulWidget {
@@ -18,12 +19,14 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   bool _isLoading = false;
   bool _isFetchingMore = false;
   bool _isSyncing = false;
+  bool _isExporting = false;
   bool _hasMore = true;
   int _offset = 0;
   final int _limit = 50;
 
   final ScrollController _scrollController = ScrollController();
   late final TransactionRepository repository;
+  late final CsvExportService _csvExportService;
 
   @override
   void initState() {
@@ -34,11 +37,12 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     
     // Temporarily inject the test token to resolve the 401 Unauthorized error.
     // TODO: Replace with dynamic token retrieval from secure storage in future steps.
-    const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc3NDgwNTQ5OH0.1mW-fe-JOFs5wLDihFYsxox3NvvK82t3bMVRfoYLr9Y";
+    const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc3NDg5MzkzMX0.ZzJoLbdC_TSQyM_4z4h80PlIYhX4bR9Fp-ctPpsrixE";
     apiService.client.options.headers['Authorization'] = 'Bearer $testToken';
 
     final apiClient = ApiClient(apiService.client);
     repository = TransactionRepository(apiClient: apiClient);
+    _csvExportService = CsvExportService(apiClient);
 
     _scrollController.addListener(_onScroll);
     _fetchTransactions();
@@ -180,13 +184,50 @@ Future<void> _fetchTransactions() async {
     }
   }
 
+Future<void> _exportCsv() async {
+    if (_isExporting) return;
+
+    setState(() {
+      _isExporting = true;
+    });
+
+    try {
+      final filePath = await _csvExportService.exportAndSaveCsv();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exported successfully to:\n$filePath'),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'OK',
+              onPressed: () {},
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to export: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isExporting = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Transactions'),
         actions: [
-          if (_isSyncing)
+          if (_isSyncing || _isExporting)
             const Padding(
               padding: EdgeInsets.all(16.0),
               child: SizedBox(
@@ -196,6 +237,12 @@ Future<void> _fetchTransactions() async {
                   strokeWidth: 2,
                 ),
               ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.download),
+              onPressed: _exportCsv,
+              tooltip: 'Export CSV',
             ),
         ],
       ),

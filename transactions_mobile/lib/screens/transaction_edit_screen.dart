@@ -36,7 +36,7 @@ class _TransactionEditScreenState extends State<TransactionEditScreen> {
     // Setup repository identically to the Detail Screen
     final apiService = ApiService();
     // TODO: Replace with secure token retrieval in future phases
-    const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc3NDgwNTQ5OH0.1mW-fe-JOFs5wLDihFYsxox3NvvK82t3bMVRfoYLr9Y";
+    const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc3NDg5MzkzMX0.ZzJoLbdC_TSQyM_4z4h80PlIYhX4bR9Fp-ctPpsrixE";
     final apiClient = ApiClient(apiService.client);
     _repository = TransactionRepository(apiClient: apiClient);
 

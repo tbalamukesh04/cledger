@@ -61,13 +61,30 @@ class ApiClient {
   }
 
   /// Triggers a CSV export of the transactions.
-  Future<String> exportTransactions() async {
-    final response = await request(
-      '/api/v1/transactions/export',
-      method: 'GET',
-    );
-    
-    return response.toString();
+  Future<void> exportTransactions(String savePath) async {
+    try {
+      await _client.download(
+        '/api/v1/transactions/export',
+        savePath,
+      );
+    } on DioException catch (e) {
+      final statusCode = e.response?.statusCode ?? 500;
+      
+      // Specifically handle the Phase 7 413 Payload Too Large boundary
+      if (statusCode == 413) {
+        throw ApiException(
+          statusCode: 413,
+          message: 'Export too large. Please contact support or try a smaller dataset.',
+          data: e.response?.data,
+        );
+      }
+      
+      throw ApiException(
+        statusCode: statusCode,
+        message: 'Failed to download export: ${e.message}',
+        data: e.response?.data,
+      );
+    }
   }
 
   /// Base HTTP request wrapper

@@ -62,11 +62,12 @@ def get_transactions(db: Session, tenant_id: int, filters: TransactionQueryParam
 
 def stream_transactions(db: Session, tenant_id: int, filters: TransactionQueryParams, batch_size: int = 1000):
     query = get_transactions(db, tenant_id=tenant_id, filters=filters)
+    
+    # Remove pagination limits for the export stream
     query = query.limit(None).offset(None)
 
-    query = query.options(
-        joinedload(Transactions.raw_message).joinedload(RawMessages.sender)
-    )
+    # Removed the conflicting joinedload() block entirely because 
+    # get_transactions() already applies contains_eager() for these relationships.
 
     for transaction in query.yield_per(batch_size):
         yield transaction
