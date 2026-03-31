@@ -13,16 +13,33 @@ class TransactionRepository {
     return cacheService.getTransactions();
   }
 
-Future<List<Transaction>> fetchTransactions({int limit = 50, int offset = 0}) async {
+  Future<List<Transaction>> fetchTransactions({int limit = 50, int offset = 0}) async {
     try {
-      await Future.delayed(const Duration(seconds: 3)); // Simulated latency
-      return await syncTransactions(limit: limit, offset: offset);
+      print("--> [Repository] Fetching MORE transactions from API (limit: $limit, offset: $offset)...");
+      final rawList = await apiClient.getTransactions(limit: limit, offset: offset);
+
+      final transactions = rawList
+          .map((json) => Transaction.fromJson(json as Map<String, dynamic>))
+          .toList();
+          
+      // Merge paginated data into the local cache rather than overwriting
+      if (transactions.isNotEmpty) {
+        final existingCache = cacheService.getTransactions();
+        final Map<int, Transaction> cacheMap = {
+          for (var t in existingCache) t.id: t
+        };
+        for (var t in transactions) {
+          cacheMap[t.id] = t;
+        }
+        await cacheService.saveTransactions(cacheMap.values.toList());
+      }
+          
+      return transactions;
     } catch (e) {
       print("--> [Repository] Network fetch failed. Falling back to cache: $e");
       
       final cachedTransactions = cacheService.getTransactions();
       
-      // Handle basic pagination for cached data
       if (offset >= cachedTransactions.length) return [];
       final end = (offset + limit < cachedTransactions.length) 
           ? offset + limit 
@@ -52,10 +69,24 @@ Future<List<Transaction>> fetchTransactions({int limit = 50, int offset = 0}) as
 
     final Map<String, dynamic> transactionData = rawData['transaction'] ?? rawData;
 
-    return Transaction.fromJson(transactionData);
+    final transaction = Transaction.fromJson(transactionData);
+    
+    // Sync this individual transaction into the local cache
+    try {
+      final existingCache = cacheService.getTransactions();
+      final index = existingCache.indexWhere((t) => t.id == id);
+      if (index != -1) {
+        existingCache[index] = transaction;
+        await cacheService.saveTransactions(existingCache);
+      }
+    } catch (e) {
+      print("--> [Repository] Non-fatal error updating cache for single transaction: $e");
+    }
+
+    return transaction;
   }
 
-Future<Transaction> reviewTransaction(int id, String action, {Map<String, dynamic>? correctedFields, String? reason}) async {
+  Future<Transaction> reviewTransaction(int id, String action, {Map<String, dynamic>? correctedFields, String? reason}) async {
     final payload = <String, dynamic>{
       'action': action,
     };

@@ -37,7 +37,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     
     // Temporarily inject the test token to resolve the 401 Unauthorized error.
     // TODO: Replace with dynamic token retrieval from secure storage in future steps.
-    const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc3NDg5MzkzMX0.ZzJoLbdC_TSQyM_4z4h80PlIYhX4bR9Fp-ctPpsrixE";
+    const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc3NDkzMzA1NH0.1nl3qEBDLnP-uWjueI_itLcRbvuxb_ZKCzXs7ShuTaQ";
     apiService.client.options.headers['Authorization'] = 'Bearer $testToken';
 
     final apiClient = ApiClient(apiService.client);
@@ -151,20 +151,26 @@ Future<void> _fetchTransactions() async {
   }
 
   Future<void> _fetchMoreTransactions() async {
-    if (_isFetchingMore || !_hasMore || _isLoading) return;
+    print("--> [UI] Scroll triggered. offset: $_offset, hasMore: $_hasMore, isFetchingMore: $_isFetchingMore, isLoading: $_isLoading");
+    if (_isFetchingMore || !_hasMore || _isLoading) {
+      return;
+    }
 
     setState(() {
       _isFetchingMore = true;
     });
 
     try {
+      print("--> [UI] Requesting next batch from repository...");
       final results = await repository.fetchTransactions(limit: _limit, offset: _offset);
+      print("--> [UI] Received ${results.length} more transactions.");
       
       setState(() {
         if (results.isEmpty) {
           _hasMore = false;
         } else {
-          _transactions.addAll(results);
+          // Use List.from to ensure a new reference is created, triggering a UI rebuild
+          _transactions = List.from(_transactions)..addAll(results);
           _offset += results.length;
           _hasMore = results.length >= _limit;
         }
@@ -302,8 +308,8 @@ Future<void> _exportCsv() async {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                            onTap: () {
-                                Navigator.push(
+                            onTap: () async {
+                                await Navigator.push(
                                     context, 
                                     MaterialPageRoute(
                                         builder: (context) => TransactionDetailScreen(
@@ -311,6 +317,14 @@ Future<void> _exportCsv() async {
                                         ),
                                     ),
                                 );
+                                final cached = repository.getCachedTransactions();
+                                final updatedIndex = cached.indexWhere((t) => t.id == txn.id);
+                                
+                                if (updatedIndex != -1 && mounted) {
+                                  setState(() {
+                                    _transactions[index] = cached[updatedIndex];
+                                  });
+                                }
                             },
                           ),
                         );
