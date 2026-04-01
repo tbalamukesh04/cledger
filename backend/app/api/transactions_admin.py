@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_db
 from app.schemas.transactions import TransactionCorrectionRequest, TransactionInvalidationRequest
 from app.services.transaction_correction_service import correct_transaction_service, invalidate_transaction_service
+from app.utils.logger import log_event, log_error
+from app.core.log_events import LogEvent
 
 router = APIRouter(tags=["Transactions Admin"])
 
@@ -28,7 +30,8 @@ def correct_transaction_endpoint(
 
         db.commit()
         db.refresh(updated_txn)
-
+        
+        log_event(LogEvent.REVIEW_FLAGGED, "Transaction successfully corrected by admin", transaction_id=str(transaction_id), status="corrected")
         return {"message": "Transaction corrected successfully", "data": updated_txn.to_dict()}
 
     except ValueError as e:
@@ -36,7 +39,7 @@ def correct_transaction_endpoint(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         db.rollback()
-        logger.error(f"Error correcting transaction {transaction_id}: {e}")
+        log_error(LogEvent.SYSTEM_ERROR, error=e, message="Error correcting transaction", transaction_id=str(transaction_id))
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/transactions/{transaction_id}/invalidate")
@@ -58,10 +61,10 @@ def invalidate_transaction_endpoint(
 
         db.commit()
         db.refresh(updated_txn)
-
+        
+        log_event(LogEvent.REVIEW_FLAGGED, "Transaction successfully invalidated by admin", transaction_id=str(transaction_id), status="invalidated")
         return {"message": "Transaction invalidated successfully", "data": updated_txn.to_dict()}
 
     except Exception as e:
         db.rollback()
-        logger.error(f"Error invalidating transaction {transaction_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        log_error(LogEvent.SYSTEM_ERROR, error=e, message="Error invalidating transaction", transaction_id=str(transaction_id))

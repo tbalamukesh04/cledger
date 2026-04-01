@@ -14,12 +14,9 @@ from app.api.export import router as export_router
 from app.api.transactions_admin import router as transactions_admin_router
 from app.api.transactions import router as transactions_router
 from app.middleware.rate_limiter import RateLimitMiddleware
+from app.middleware.correlation import CorrelationIdMiddleware
 
 setup_logging()
-logging.basicConfig(
-    level = logging.INFO, 
-    format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
@@ -66,6 +63,7 @@ app = FastAPI(
 )
 
 app.add_middleware(RateLimitMiddleware)
+app.add_middleware(CorrelationIdMiddleware)
 
 from app.utils.api_errors import setup_exception_handlers
 setup_exception_handlers(app)

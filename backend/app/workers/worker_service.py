@@ -1,6 +1,7 @@
 import sys
 import json
 import time
+import uuid
 import signal
 import logging
 from datetime import datetime, timezone
@@ -15,9 +16,10 @@ from app.workers.job_handler import process_webhook_batch, RETRYABLE_EXCEPTIONS
 from app.config.logging_config import setup_logging
 from app.utils.backoff import apply_exponential_backoff
 from app.ai.config import AI_BATCH_SIZE, AI_BATCH_TIMEOUT_SECONDS
+from app.utils.logger import log_event, log_error, bind_context
+from app.core.log_events import LogEvent
 
 setup_logging()
-logger = logging.getLogger(__name__)
 
 is_running = True
 
@@ -26,10 +28,7 @@ BASE_RETRY_DELAY_SECONDS = 1
 
 def handle_shutdown(signum, frame):
     global is_running
-    logger.info(json.dumps({
-        "event_type": "worker_shutdown_initiated",
-        "signal": signum
-    }))
+    log_event(LogEvent.WORKER_SHUTDOWN, "Worker shutdown initiated", signal=signum)
     is_running = False
 
 signal.signal(signal.SIGINT, handle_shutdown)
@@ -37,21 +36,15 @@ signal.signal(signal.SIGTERM, handle_shutdown)
 
 def start_worker():
     global is_running
-    logger.info(json.dumps({
-        "event_type": "worker_startup",
-        "queue": WEBHOOK_QUEUE_NAME
-    }))
+    log_event(LogEvent.WORKER_STARTUP, "Worker starting up", queue=WEBHOOK_QUEUE_NAME)
 
     redis_client = get_redis_client()
 
     try:
         redis_client.ping()
-        logger.info(json.dumps({"event_type": "redis_connection_success"}))
+        log_event(LogEvent.REDIS_CONNECTION, "Redis connection successful", status="connected")
     except Exception as e:
-        logger.error(json.dumps({
-            "event_type": "redis_connection_failed",
-            "error": str(e)
-        }))
+        log_error(LogEvent.SYSTEM_ERROR, error=e, message="Redis connection failed during worker startup")
         sys.exit(1)
 
     # ==========================================================
@@ -62,12 +55,9 @@ def start_worker():
         recovered_job = redis_client.rpoplpush(WEBHOOK_ACTIVE_QUEUE, WEBHOOK_QUEUE_NAME)
         if not recovered_job:
             break
-        logger.info(json.dumps({
-            "event_type": "job_recovered_from_crash",
-            "message": "Orphaned job safely returned to main queue."
-        }))
+        log_event(LogEvent.SYSTEM_ERROR, "Orphaned job safely returned to main queue", status="recovered")
     
-    logger.info(json.dumps({"event_type": "worker_listening", "batch_size": AI_BATCH_SIZE}))
+    log_event(LogEvent.WORKER_STARTUP, "Worker listening for jobs", batch_size=AI_BATCH_SIZE)
 
     while is_running:
         try:
@@ -86,7 +76,7 @@ def start_worker():
                         job = WebhookJobPayload(**json.loads(payload_str))
                         batch_jobs.append(job)
                     except (json.JSONDecodeError, ValidationError) as e:
-                        logger.error(f"Job validation error, sending to DLQ: {e}")
+                        log_error(LogEvent.JOB_FAILED, error=e, message="Job validation error, sending to DLQ", status="dlq")
                         redis_client.lpush(WEBHOOK_DLQ_NAME, payload_str)
                         redis_client.lrem(WEBHOOK_ACTIVE_QUEUE, 1, payload_str)
                         batch_payloads.remove(payload_str) # Don't process this one
@@ -96,13 +86,19 @@ def start_worker():
 
             # 2. Process Batch
             if batch_jobs:
-                logger.info(json.dumps({"event_type": "executing_batch", "size": len(batch_jobs)}))
+                # Bind a batch_id for the execution wrapper logs
+                batch_id = str(uuid.uuid4())
+                bind_context(job_id=f"batch-{batch_id}")
+                log_event(LogEvent.JOB_STARTED, "Executing batch", size=len(batch_jobs))
                 
                 # We execute the new batch handler
                 results = process_webhook_batch(batch_jobs)
 
                 # 3. Cleanup Active Queue based on results
                 for payload_str, job in zip(batch_payloads, batch_jobs):
+                    
+                    # Bind context specifically for this job's cleanup logs
+                    bind_context(job_id=job.job_id)
                     status = results.get(job.job_id, "retry")
                     
                     if status == "success":
@@ -111,25 +107,29 @@ def start_worker():
                     elif status == "dlq":
                         redis_client.lpush(WEBHOOK_DLQ_NAME, job.to_json())
                         redis_client.lrem(WEBHOOK_ACTIVE_QUEUE, 1, payload_str)
+                        log_event(LogEvent.JOB_FAILED, "Job moved to DLQ", status="dlq")
                         
                     elif status == "retry":
                         job.retry_count += 1
                         if job.retry_count > MAX_RETRIES:
-                            logger.error(f"Job {job.job_id} max retries exceeded. Moving to DLQ.")
+                            log_event(LogEvent.JOB_FAILED, "Job max retries exceeded. Moving to DLQ.", status="dlq", retry_count=job.retry_count)
                             redis_client.lpush(WEBHOOK_DLQ_NAME, job.to_json())
                             redis_client.lrem(WEBHOOK_ACTIVE_QUEUE, 1, payload_str)
                         else:
                             # Re-queue for next attempt
-                            logger.warning(f"Job {job.job_id} retrying ({job.retry_count}/{MAX_RETRIES}).")
+                            log_event(LogEvent.JOB_STARTED, f"Job retrying ({job.retry_count}/{MAX_RETRIES}).", status="retry", retry_count=job.retry_count)
                             redis_client.lpush(WEBHOOK_QUEUE_NAME, job.to_json())
                             redis_client.lrem(WEBHOOK_ACTIVE_QUEUE, 1, payload_str)
                             apply_exponential_backoff(job.retry_count, BASE_RETRY_DELAY_SECONDS)
+                
+                # Clear context after batch is done
+                bind_context(job_id=None)
 
         except Exception as e:
-            logger.error(json.dumps({"event_type": "redis_polling_error", "error": str(e)}))
+            log_error(LogEvent.SYSTEM_ERROR, error=e, message="Redis polling error in worker loop")
             time.sleep(2) 
 
-    logger.info(json.dumps({"event_type": "worker_shutdown_complete"}))
+    log_event(LogEvent.WORKER_SHUTDOWN, "Worker shutdown complete")
 
 if __name__ == "__main__":
     start_worker()

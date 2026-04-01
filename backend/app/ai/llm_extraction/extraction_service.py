@@ -1,34 +1,40 @@
-import logging
 from typing import List, Dict, Any
 
 from app.ai.gemini_client import GeminiClient
 from app.ai.batch_request_builder import build_batch_request_payload, construct_batch_prompt
 from app.ai.prompts.prompt_registry import PromptRegistry
-
-logger = logging.getLogger(__name__)
+from app.utils.logger import log_event, log_error, LogTimer
+from app.core.log_events import LogEvent
 
 def process_extraction_batch(candidates_for_ai: List[Any]) -> Dict[str, Any]:
     """
     Constructs and sends a batch of transaction messages to Gemini for extraction.
     Returns the raw JSON dictionary response from the Gemini API.
     """
-    # 1. Build the payload
     batch_payload = build_batch_request_payload(candidates_for_ai)
     user_prompt_data, system_instruction, version_id = construct_batch_prompt(batch_payload)
 
-    logger.info(f"Sending batch of {len(batch_payload)} messages to Gemini.",
-    extra={
-        "event_type": "batch_transaction_extraction_sent",
-        "batch_size": len(batch_payload),
-        "version_id": version_id
-    })
+    timer = LogTimer()
+    log_event(
+        LogEvent.LLM_CALLED, 
+        f"Sending batch of {len(batch_payload)} messages to Gemini.",
+        batch_size=len(batch_payload),
+        version_id=version_id,
+        status="initiated"
+    )
 
-    # 3. Call the LLM using your Client Class
     client = GeminiClient()
     try:
         response_dict = client.generate_content(
             prompt=user_prompt_data,
             system_instruction=system_instruction
+        )
+        log_event(
+            LogEvent.LLM_CALLED,
+            "Successfully received response from Gemini.",
+            status="success",
+            batch_size=len(batch_payload),
+            duration_ms=timer.get_duration_ms()
         )
         return {
             "raw_response": response_dict,
@@ -37,5 +43,11 @@ def process_extraction_batch(candidates_for_ai: List[Any]) -> Dict[str, Any]:
             }
         }
     except Exception as e:
-        logger.error(f"Error calling Gemini API for batch: {e}")
+        log_error(
+            LogEvent.LLM_ERROR, 
+            error=e, 
+            message="Error calling Gemini API for batch",
+            duration_ms=timer.get_duration_ms(),
+            status="failed"
+        )
         raise e

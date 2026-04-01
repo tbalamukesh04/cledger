@@ -34,7 +34,8 @@ from app.ai.config import EXTRACTION_CONFIDENCE_THRESHOLD
 from app.crud.transaction_crud import upsert_transaction
 from app.models.transactions import TransactionStatus
 
-logger = logging.getLogger(__name__)
+from app.utils.logger import log_event, log_error, LogTimer
+from app.core.log_events import LogEvent
 
 WORKER_IDENTIFIER = os.getenv("WORKER_IDENTIFIER", f"worker-{os.getpid()}")
 
@@ -195,16 +196,14 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             raw_msg.is_transaction = context.scoring.is_transaction_candidate
             raw_msg.parsing_meta = parsing_meta_obj.to_jsonb()
 
-            logger.info(
+            log_event(
+                LogEvent.JOB_STARTED,
                 "Message classification metadata generated",
-                extra={
-                    "event_type": "classification_metadata_staged",
-                    "raw_message_id": job.raw_message_id,
-                    "score": context.scoring.total_score,
-                    "threshold": scorer.threshold,
-                    "is_transaction": context.scoring.is_transaction_candidate,
-                    "db_update_status": "pending_commit"
-                }
+                raw_message_id=str(job.raw_message_id),
+                score=context.scoring.total_score,
+                threshold=scorer.threshold,
+                is_transaction=context.scoring.is_transaction_candidate,
+                db_update_status="pending_commit"
             )
 
             # --- ROUTING DECISION ---
@@ -237,71 +236,46 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
         for preprocessed_data in candidates_for_ai:
             cached_schema = cache_lookups.get(preprocessed_data.text_hash)
             if cached_schema:
-                logger.info(json.dumps({
-                    "event_type": "extraction_cache_lookup",
-                    "raw_message_id": str(preprocessed_data.raw_message_id),
-                    "message_hash": preprocessed_data.text_hash,
-                    "cache_status": "hit",
-                    "extraction_source": "cache",
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }))
+                log_event(LogEvent.JOB_STARTED, "Extraction Cache Hit", raw_message_id=str(preprocessed_data.raw_message_id), cache_status="hit")
                 extracted_data_map[str(preprocessed_data.raw_message_id)] = cached_schema
             else:
-                logger.info(json.dumps({
-                    "event_type": "extraction_cache_lookup",
-                    "raw_message_id": str(preprocessed_data.raw_message_id),
-                    "message_hash": preprocessed_data.text_hash,
-                    "cache_status": "miss",
-                    "extraction_source": "LLM",
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }))
+                log_event(LogEvent.JOB_STARTED, "Extraction Cache Miss", raw_message_id=str(preprocessed_data.raw_message_id), cache_status="miss")
                 candidates_for_ai_misses.append(preprocessed_data)
+                
         batch_failed = False
 
         if candidates_for_ai_misses:
             candidate_miss_ids = [str(c.raw_message_id) for c in candidates_for_ai_misses]
             miss_hash_map = {str(c.raw_message_id): c.text_hash for c in candidates_for_ai_misses}
 
-            logger.info(json.dumps({
-                "event_type": "batch_extraction_misses",
-                "batch_id": batch_id,
-                "batch_size": len(candidates_for_ai_misses),
-                "message_ids": candidate_miss_ids
-            }))
-
-            extraction_start_time = time.time()
+            timer = LogTimer()
             gemini_response_status = "success"
 
             try:
                 raw_llm_response = process_extraction_batch(candidates_for_ai_misses)
-                extraction_latency = round(time.time() - extraction_start_time, 3)
                 llm_extracted_data = parse_batch_response(raw_llm_response, candidate_miss_ids, batch_id)
                 extracted_data_map.update(llm_extracted_data)
+                
                 for msg_id, ext_result in llm_extracted_data.items():
                     if ext_result:
                         text_hash = miss_hash_map.get(msg_id)
                         if text_hash:
                             cache_extraction_result(text_hash, ext_result)
-                            logger.info(json.dumps({
-                                "event_type": "extraction_cache_hit",
-                                "raw_message_id": msg_id,
-                                "text_hash": text_hash,
-                            }))
+                            log_event(LogEvent.JOB_STARTED, "Extraction Result Cached", raw_message_id=msg_id)
 
             except Exception as e:
-                extraction_latency = round(time.time() - extraction_start_time, 3)
-                gemini_response_status = f"failed: {str(e)}"
-                logger.error(f"Batch {batch_id} AI extraction failed completely: {e}")
+                gemini_response_status = "failed"
+                log_error(LogEvent.LLM_ERROR, error=e, message="AI Batch extraction failed completely", batch_id=batch_id)
                 batch_failed = True
 
-            logger.info(json.dumps({
-                "event_type": "batch_extraction_completed",
-                "batch_id": batch_id,
-                "batch_size": len(candidates_for_ai_misses),
-                "message_ids": candidate_miss_ids,
-                "extraction_latency_seconds": extraction_latency,
-                "gemini_response_status": gemini_response_status
-            }))
+            log_event(
+                LogEvent.JOB_STARTED,
+                "Batch extraction routine completed",
+                batch_id=batch_id,
+                batch_size=len(candidates_for_ai_misses),
+                duration_ms=timer.get_duration_ms(),
+                status=gemini_response_status
+            )
 
         for preprocessed_data in candidates_for_ai:
             raw_msg = raw_msg_map[preprocessed_data.raw_message_id]
@@ -358,18 +332,12 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 "raw_ai_output": extraction_result.model_dump() if extraction_result else None
             }
 
-            logger.info(
-                json.dumps({
-                    "event_type": "confidence_routing_decision",
-                    "raw_message_id": preprocessed_data.raw_message_id,
-                    "extraction_confidence": confidence_score if extraction_result else 0.0,
-                    "threshold_value": EXTRACTION_CONFIDENCE_THRESHOLD,
-                    "routing_status": txn_db_status.value if txn_db_status else None,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "message_hash": preprocessed_data.message_hash,
-                    "prompt_version": getattr(extraction_result, "prompt_version", None) if extraction_result else None,
-                    "model_version": "gemini-2.5-flash"
-                })
+            log_event(
+                LogEvent.TRANSACTION_CREATED,
+                "Confidence Routing Decision Made",
+                raw_message_id=str(preprocessed_data.raw_message_id),
+                confidence=confidence_score if extraction_result else 0.0,
+                status=txn_db_status.value if txn_db_status else "rejected"
             )
 
             raw_msg.parsing_meta = current_meta
@@ -392,7 +360,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                     upsert_transaction(db=db, txn_data=txn_data, commit=False, actor_identifier=WORKER_IDENTIFIER)
                     raw_msg.is_transaction = True
                 except ValueError as e:
-                    logger.warning(f"Duplicate transaction skipped: {e}")
+                    log_event(LogEvent.SYSTEM_ERROR, f"Duplicate transaction skipped: {e}", level=logging.WARNING)
 
             processing_outcome = "success" if extraction_status in ["SUCCESS", "NON_TRANSACTION"] else "success_with_fallback"
             
@@ -406,16 +374,15 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
         # 5. Commit whole batch
         try:
             db.commit()
-            logger.info(json.dumps({
-                "event_type": "batch_processing_completed",
-                "batch_size_sent_to_ai": len(candidates_for_ai),
-                "total_jobs_processed": len(jobs),
-                "worker_identifier": WORKER_IDENTIFIER
-            }))
+            log_event(
+                LogEvent.JOB_STARTED, 
+                "Batch processing completed successfully", 
+                status="completed", 
+                total_jobs_processed=len(jobs)
+            )
         except IntegrityError as e:
             db.rollback()
-            logger.warning(f"Batch DB commit failed due to integrity error: {e}")
-            # Fall back to retrying jobs individually or fail batch
+            log_error(LogEvent.JOB_FAILED, error=e, message="Batch DB commit failed due to integrity error")
             for job in jobs:
                 job_results[job.job_id] = "retry"
 
@@ -423,11 +390,11 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
 
     except RETRYABLE_EXCEPTIONS as e:
         db.rollback()
-        logger.warning(f"Transient error in batch: {e}")
+        log_error(LogEvent.JOB_FAILED, error=e, message="Transient error in batch. Will retry.")
         return {job.job_id: "retry" for job in jobs}
     except Exception as e:
         db.rollback()
-        logger.error(f"Fatal error in batch processing: {e}", exc_info=True)
+        log_error(LogEvent.JOB_FAILED, error=e, message="Fatal error in batch processing. Routing to DLQ.")
         return {job.job_id: "dlq" for job in jobs}
     finally:
         db.close()
