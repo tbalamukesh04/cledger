@@ -17,6 +17,7 @@ class LogEvent(str, Enum):
     REDIS_CONNECTION = "redis_connection"
     DB_CONNECTION = "db_connection"
     SYSTEM_ERROR = "system_error"
+    QUEUE_DEPTH_CHECKED = "queue_depth_checked"
 
 class LogSchema(TypedDict, total=False):
     """

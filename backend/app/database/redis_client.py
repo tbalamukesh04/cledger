@@ -2,10 +2,9 @@ import os
 import logging
 from dotenv import load_dotenv
 import redis
+from app.core.log_events import LogEvent
 
 load_dotenv()
-
-logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -25,7 +24,7 @@ def get_redis_client() -> redis.Redis:
         client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
         return client
     except Exception as e:
-        logger.error(f"Failed to initialize Redis client: {e}")
+        log_event(LogEvent.SYSTEM_ERROR, error=e, message="Failed to initialize Redis client")
         raise e
 
 redis_client = get_redis_client()
@@ -36,8 +35,8 @@ def verify_redis_connection():
     """
     try:
         if redis_client.ping():
-            logger.info("✅ Redis client successfully connected and pinged.")
+            log_event(LogEvent.REDIS_CONNECTION, "Redis client successfully connected and pinged.", status="connected")
             return True
     except redis.ConnectionError as e:
-        logger.error(f"❌ Redis connection failed: {e}")
+        log_event(LogEvent.SYSTEM_ERROR, error=e, message="Redis connection failed.")
         return False

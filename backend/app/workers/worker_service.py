@@ -59,8 +59,17 @@ def start_worker():
     
     log_event(LogEvent.WORKER_STARTUP, "Worker listening for jobs", batch_size=AI_BATCH_SIZE)
 
+    last_queue_log_time = time.time()
+    QUEUE_LOG_INTERVAL_SECONDS = 60
+
     while is_running:
         try:
+            current_time = time.time()
+            if current_time - last_queue_log_time >= QUEUE_LOG_INTERVAL_SECONDS:
+                queue_depth = redis_client.llen(WEBHOOK_QUEUE_NAME)
+                log_event(LogEvent.QUEUE_DEPTH_CHECKED, "Queue depth", queue_name=WEBHOOK_QUEUE_NAME, queue_depth=queue_depth)
+                last_queue_log_time = current_time
+                
             batch_payloads = []
             batch_jobs = []
             start_time = time.time()

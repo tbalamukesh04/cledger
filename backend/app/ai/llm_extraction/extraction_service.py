@@ -5,6 +5,7 @@ from app.ai.batch_request_builder import build_batch_request_payload, construct_
 from app.ai.prompts.prompt_registry import PromptRegistry
 from app.utils.logger import log_event, log_error, LogTimer
 from app.core.log_events import LogEvent
+from app.core.metrics import inc_metric
 
 def process_extraction_batch(candidates_for_ai: List[Any]) -> Dict[str, Any]:
     """
@@ -25,6 +26,7 @@ def process_extraction_batch(candidates_for_ai: List[Any]) -> Dict[str, Any]:
 
     client = GeminiClient()
     try:
+        inc_metric("llm_calls")
         response_dict = client.generate_content(
             prompt=user_prompt_data,
             system_instruction=system_instruction
@@ -43,6 +45,7 @@ def process_extraction_batch(candidates_for_ai: List[Any]) -> Dict[str, Any]:
             }
         }
     except Exception as e:
+        inc_metric("llm_failures")
         log_error(
             LogEvent.LLM_ERROR, 
             error=e, 

@@ -13,45 +13,48 @@ from app.api.admin import router as admin_router
 from app.api.export import router as export_router
 from app.api.transactions_admin import router as transactions_admin_router
 from app.api.transactions import router as transactions_router
+from app.api.metrics import router as metrics_router
 from app.middleware.rate_limiter import RateLimitMiddleware
 from app.middleware.correlation import CorrelationIdMiddleware
+from app.utils.logger import log_event, log_error, LogTimer
+from app.core.log_events import LogEvent
 
 setup_logging()
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting Backend Service..")
+    log_event(LogEvent.WORKER_STARTUP, "Starting Backend Service..")
 
     try:
         with engine.connect() as conn:
-            logger.info("Database connection successful.")
+            log_event(LogEvent.DB_CONNECTION, "Database connection successful.")
 
     except Exception as e:
-        logger.error(f"Database connection failed: {e}.")
+        log_event(LogEvent.SYSTEM_ERROR, error=e, message="Database connection failed.")
         raise e
 
     redis_url = os.getenv("REDIS_URL")
     if not redis_url:
-        logger.warning("REDIS URL environment variable not set. Using default")
+        log_event(LogEvent.SYSTEM_ERROR, message="REDIS URL environment variable not set. Using default", level=logging.WARNING)
         redis_url = "redis://localhost:6379/0"
 
     try:
         app.state.redis = redis.Redis.from_url(redis_url, decode_responses=True)
         app.state.redis.ping()
-        logger.info("Redis connection successful.")
+        log_event(LogEvent.REDIS_CONNECTION, "Redis connection successful.", status="connected")
 
     except Exception as e:
-        logger.error(f"Redis connection failed: {e}")
+        log_event(LogEvent.SYSTEM_ERROR, error=e, message="Redis connection failed.")
         raise e
 
     yield
 
-    logger.info("Shutting down Cledger backend service")
+    log_event(LogEvent.WORKER_SHUTDOWN, "Shutting down Cledger backend service")
     engine.dispose()
-    logger.info("Database connection disposed.")
+    log_event(LogEvent.DB_CONNECTION, "Database connection disposed.", status="closed")
     app.state.redis.close()
-    logger.info("Redis connection closed.")
+    log_event(LogEvent.REDIS_CONNECTION, "Redis connection closed.", status="closed")
 
 app = FastAPI(
     title = "Cledger Backend API",
@@ -74,6 +77,7 @@ app.include_router(admin_router, prefix="/api/v1")
 app.include_router(export_router, prefix="/api/v1")
 app.include_router(transactions_admin_router, prefix="/api/v1")
 app.include_router(transactions_router, prefix="/api/v1")
+app.include_router(metrics_router)
 
 @app.get("/", tags=["Root"])
 async def root():

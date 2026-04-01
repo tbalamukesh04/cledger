@@ -18,6 +18,7 @@ from app.models.participants import Participants
 from app.models.groups import Groups
 from app.utils.logger import log_event, log_error, LogTimer
 from app.core.log_events import LogEvent
+from app.core.metrics import inc_metric
 
 router = APIRouter()
 
@@ -147,6 +148,7 @@ async def receive_webhook(
                                 
                                 try:
                                     redis_client.lpush(WEBHOOK_QUEUE_NAME, job_payload.to_json())
+                                    inc_metric("total_webhooks")
                                     log_event(LogEvent.JOB_STARTED, "Job Enqueued", job_id=job_payload.job_id, raw_message_id=str(new_message.id), queue_name=WEBHOOK_QUEUE_NAME, status="enqueued")
                                 except Exception as e:
                                     log_error(LogEvent.JOB_FAILED, error=e, message="Failed to enqueue job", raw_message_id=str(new_message.id), queue_name=WEBHOOK_QUEUE_NAME, status="dlq")

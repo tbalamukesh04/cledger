@@ -36,6 +36,7 @@ from app.models.transactions import TransactionStatus
 
 from app.utils.logger import log_event, log_error, LogTimer
 from app.core.log_events import LogEvent
+from app.core.metrics import inc_metric
 
 WORKER_IDENTIFIER = os.getenv("WORKER_IDENTIFIER", f"worker-{os.getpid()}")
 
@@ -358,6 +359,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 }
                 try: 
                     upsert_transaction(db=db, txn_data=txn_data, commit=False, actor_identifier=WORKER_IDENTIFIER)
+                    inc_metric("total_transactions")
                     raw_msg.is_transaction = True
                 except ValueError as e:
                     log_event(LogEvent.SYSTEM_ERROR, f"Duplicate transaction skipped: {e}", level=logging.WARNING)
