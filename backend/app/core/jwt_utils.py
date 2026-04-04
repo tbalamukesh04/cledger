@@ -3,7 +3,9 @@ import jwt
 from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, status
 
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "default_insecure_secret_key_change_in_production")
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not JWT_SECRET_KEY:
+    raise ValueError("Critical: JWT_SECRET_KEY environment variable is not set.")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 

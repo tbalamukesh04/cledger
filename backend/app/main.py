@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
             log_event(LogEvent.DB_CONNECTION, "Database connection successful.")
 
     except Exception as e:
-        log_event(LogEvent.SYSTEM_ERROR, error=e, message="Database connection failed.")
+        log_event(LogEvent.SYSTEM_ERROR, error=str(e), message="Database connection failed.")
         raise e
 
     redis_url = os.getenv("REDIS_URL")
@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
         log_event(LogEvent.REDIS_CONNECTION, "Redis connection successful.", status="connected")
 
     except Exception as e:
-        log_event(LogEvent.SYSTEM_ERROR, error=e, message="Redis connection failed.")
+        log_event(LogEvent.SYSTEM_ERROR, error=str(e), message="Redis connection failed.")
         raise e
 
     yield
@@ -95,4 +95,8 @@ async def get_dev_token():
     return {"access_token": token}
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host= "0.0.0.0", port=8000, reload=True)
+    is_dev = os.getenv("ENVIRONMENT", "production").lower() == "development"
+    api_host = os.getenv("API_HOST", "127.0.0.1")
+    api_port = int(os.getenv("API_PORT", 8000))
+    
+    uvicorn.run("app.main:app", host=api_host, port=api_port, reload=is_dev)
