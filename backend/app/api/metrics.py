@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Response, Depends
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from app.core.metrics import setup_metrics
+from app.core.auth_dependencies import require_admin
 
-router = APIRouter(tags=["Monitoring"])
+router = APIRouter(tags=["Monitoring"], dependencies=[Depends(require_admin)])
 
 # Register the Redis-backed collector on route initialization
 setup_metrics()

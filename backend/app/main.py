@@ -14,7 +14,6 @@ from app.api.export import router as export_router
 from app.api.transactions_admin import router as transactions_admin_router
 from app.api.transactions import router as transactions_router
 from app.api.metrics import router as metrics_router
-from app.middleware.rate_limiter import RateLimitMiddleware
 from app.middleware.correlation import CorrelationIdMiddleware
 from app.utils.logger import log_event, log_error, LogTimer
 from app.core.log_events import LogEvent
@@ -65,7 +64,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-app.add_middleware(RateLimitMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
 
 from app.utils.api_errors import setup_exception_handlers

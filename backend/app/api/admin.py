@@ -1,11 +1,18 @@
+import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+
 from app.api.dependencies import get_db
+from app.core.auth_dependencies import require_admin
+from app.middleware.ip_filter import IPFilter
 from app.models.transactions import Transactions, TransactionStatus
 from app.schemas.transactions import TransactionCorrectionRequest, TransactionInvalidationRequest
 from app.services.transaction_correction_service import correct_transaction_service
 
-router = APIRouter()
+router = APIRouter(dependencies=[
+    Depends(require_admin),
+    Depends(IPFilter(allowed_ips_env_key="ADMIN_ALLOWED_IPS"))
+])
 
 @router.get("/transactions/review")
 def get_transactions_for_review(db: Session = Depends(get_db)):

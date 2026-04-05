@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from redis import Redis
 
 from app.api.dependencies import get_db, get_redis
+from app.middleware.rate_limiter import RateLimiter
 from app.database.redis_client import WEBHOOK_QUEUE_NAME
 from app.schemas.jobs import WebhookJobPayload
 from app.utils.security import verify_whatsapp_signature
@@ -19,10 +20,14 @@ from app.models.groups import Groups
 from app.utils.logger import log_event, log_error, LogTimer
 from app.core.log_events import LogEvent
 from app.core.metrics import inc_metric
+from app.middleware.ip_filter import IPFilter
 
 router = APIRouter()
 
-@router.get("/webhook", tags=["Webhook"])
+@router.get("/webhook", tags=["Webhook"], dependencies=[
+    Depends(RateLimiter(requests=15, window=60)),
+    Depends(IPFilter(allowed_ips_env_key="WEBHOOK_ALLOWED_IPS"))
+])
 async def verify_webhook(
     hub_mode:str = Query(None, alias="hub.mode"),
     hub_challenge:str = Query(None, alias="hub.challenge"),
@@ -37,7 +42,12 @@ async def verify_webhook(
         raise HTTPException(status_code=403, detail="Verification Failed")
     raise HTTPException(status_code=400, detail="Invalid Request")
 
-@router.post("/webhook", tags=["Webhook"])
+@router.post("/webhook", tags=["Webhook"], dependencies=[
+    Depends(RateLimiter(requests=15, window=60)),
+    Depends(IPFilter(allowed_ips_env_key="WEBHOOK_ALLOWED_IPS"))
+    ]
+)
+
 async def receive_webhook(
     request: Request, 
     db: Session = Depends(get_db),

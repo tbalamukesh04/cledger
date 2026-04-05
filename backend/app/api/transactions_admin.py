@@ -2,12 +2,20 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
+from app.core.auth_dependencies import require_admin
+from app.middleware.ip_filter import IPFilter
 from app.schemas.transactions import TransactionCorrectionRequest, TransactionInvalidationRequest
 from app.services.transaction_correction_service import correct_transaction_service, invalidate_transaction_service
 from app.utils.logger import log_event, log_error
 from app.core.log_events import LogEvent
 
-router = APIRouter(tags=["Transactions Admin"])
+router = APIRouter(
+    tags=["Transactions Admin"], 
+    dependencies=[
+        Depends(require_admin),
+        Depends(IPFilter(allowed_ips_env_key="ADMIN_ALLOWED_IPS"))
+    ]
+)
 
 @router.post("/transactions/{transaction_id}/correct")
 def correct_transaction_endpoint(

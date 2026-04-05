@@ -5,6 +5,7 @@ import os
 import contextvars
 from logging.handlers import WatchedFileHandler
 from datetime import datetime, timezone
+from app.config.pii_policy import apply_field_redaction, redact_unstructured_text
 
 request_id_ctx = contextvars.ContextVar("request_id", default = None)
 job_id_ctx = contextvars.ContextVar("job_id", default=None)
@@ -19,7 +20,7 @@ def redact_dict(d: dict) -> dict:
     redacted = {}
     for k, v in d.items():
         if k.lower() in PII_KEYS:
-            redacted[k] = "***REDACTED***"
+            redacted[k] = apply_field_redaction(k,v)
 
         elif isinstance(v, dict):
             redacted[k] = redact_dict(v)
