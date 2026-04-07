@@ -9,8 +9,10 @@ logs/
 *.log
 
 # Environment Secrets
+backup.env
 .env
 .env.local
+restore.env
 
 # IDEs and OS files
 .vscode/
