@@ -72,7 +72,7 @@ def _extract_message_text(raw_json: dict) -> str|None:
         return None
 
     except Exception as e:
-        logger.warning(f"Payload traversal failed during text extraction: {e}")
+        log_error(LogEvent.JOB_FAILED, error=e, message="Payload traversal failed during text extraction", level=logging.WARNING)
         return None
         
 def _extract_message_timestamp(raw_json: dict) -> str | None:
@@ -91,7 +91,7 @@ def _extract_message_timestamp(raw_json: dict) -> str | None:
         return msg.get("timestamp")
         
     except (IndexError, AttributeError, TypeError) as e:
-        logger.warning(f"Payload traversal failed during timestamp extraction: {e}")
+        log_error(LogEvent.JOB_FAILED, error=e, message="Payload traversal failed during timestamp extraction", level=logging.WARNING)
         return None
 
 def _parse_epoch_to_int(epoch_str: str | None) -> int | None:
@@ -100,7 +100,7 @@ def _parse_epoch_to_int(epoch_str: str | None) -> int | None:
     try:
         return int(epoch_str)
     except (ValueError, TypeError) as e:
-        logger.warning(f"Failed to parse epoch timestamp '{epoch_str}'")
+        log_error(LogEvent.JOB_FAILED, error=e, message=f"Failed to parse epoch timestamp '{epoch_str}'", level=logging.WARNING)
         return None
 
 def _generate_content_hash(text: str | None, timestamp: datetime) -> str:
@@ -135,7 +135,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
         for job in jobs:
             raw_msg = raw_msg_map.get(job.raw_message_id)
             if not raw_msg:
-                logger.error(f"Job {job.job_id}: RawMessage {job.raw_message_id} not found.")
+                log_error(LogEvent.JOB_FAILED, error=e, message=f"RawMessage {job.raw_message_id} not found.", level=logging.WARNING)
                 job_results[job.job_id] = "dlq"
                 continue
 
@@ -153,7 +153,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             idempotency_key = raw_msg.message_id if is_native_wamid else f"idem_content_{content_hash}"
 
             if raw_msg.processed:
-                logger.warning(f"Job {job.job_id}: Already processed. Skipping.")
+                log_event(LogEvent.JOB_FAILED, message=f"RawMessage {job.raw_message_id} already processed.", level=logging.WARNING)
                 job_results[job.job_id] = "success"
                 continue
 
