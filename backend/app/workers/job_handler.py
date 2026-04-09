@@ -22,6 +22,7 @@ from app.utils.datetime_utils import convert_epoch_to_utc_datetime
 from app.utils.hashing import generate_content_hash, generate_text_hash
 from app.ai.ai_parser import AIParser
 from app.models.transactions import Transactions, TransactionStatus
+from app.models.audit_logs import AuditLog, EventType, ActorType
 from app.utils.date_normalization import normalize_extracted_date
 from app.utils.financial_validation import validate_and_convert_amount, normalize_currency_code, normalize_transaction_verb
 from app.ai.batch_request_builder import build_batch_request_payload
@@ -32,7 +33,6 @@ from app.ai.batch_response_parser import parse_batch_response
 from app.ai.extraction_cache import get_cached_extractions_batch, cache_extraction_result
 from app.ai.config import EXTRACTION_CONFIDENCE_THRESHOLD
 from app.crud.transaction_crud import upsert_transaction
-from app.models.transactions import TransactionStatus
 
 from app.utils.logger import log_event, log_error, LogTimer
 from app.core.log_events import LogEvent
@@ -267,7 +267,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             except Exception as e:
                 gemini_response_status = "failed"
                 log_error(LogEvent.LLM_ERROR, error=e, message="AI Batch extraction failed completely", batch_id=batch_id)
-                batch_failed = True
+                # Do not set batch_failed = True. We want to route these deterministic LLM failures to the review queue, not infinite retry loops.
 
             log_event(
                 LogEvent.JOB_STARTED,
@@ -281,10 +281,6 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
         for preprocessed_data in candidates_for_ai:
             raw_msg = raw_msg_map[preprocessed_data.raw_message_id]
             job = valid_jobs_map[preprocessed_data.raw_message_id]
-            
-            if batch_failed: 
-                job_results[job.job_id] = "retry"
-                continue
             
             # Safely fetch result via string ID
             extraction_result = extracted_data_map.get(str(preprocessed_data.raw_message_id))
@@ -364,14 +360,27 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 except ValueError as e:
                     log_event(LogEvent.SYSTEM_ERROR, f"Duplicate transaction skipped: {e}", level=logging.WARNING)
 
-            processing_outcome = "success" if extraction_status in ["SUCCESS", "NON_TRANSACTION"] else "success_with_fallback"
+            processing_outcome = "success" if extraction_status in ["SUCCESS", "NON_TRANSACTION"] else "review_needed"
             
             raw_msg.processed = True
             raw_msg.processing_status = processing_outcome
             raw_msg.processing_started_at = processing_started_at
             raw_msg.processing_completed_at = datetime.now(timezone.utc)
+
+            if processing_outcome == "review_needed":
+                audit = AuditLog(
+                    entity_type="raw_message",
+                    entity_id=str(raw_msg.id),
+                    event_type=EventType.UPDATE,
+                    actor_type=ActorType.SYSTEM,
+                    actor_identifier=WORKER_IDENTIFIER,
+                    old_state=None,
+                    new_state={"status": "review_needed", "reason": "LLM_SCHEMA_INVALID"}
+                )
+                db.add(audit)
             
-            job_results[job.job_id] = "success" if extraction_status != "AI_EXTRACTION_FAILED" else "dlq"
+            # Message is processed and safely routed to human review database state. No DLQ necessary.
+            job_results[job.job_id] = "success"
 
         # 5. Commit whole batch
         try:
