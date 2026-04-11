@@ -1,4 +1,3 @@
-# backend/app/ai/extraction_cache.py
 import json
 import logging
 from datetime import datetime, timezone
@@ -30,9 +29,8 @@ def get_cached_extractions_batch(text_hashes: List[str]) -> Dict[str, Optional[L
                 try:
                     parsed_data = json.loads(cached_data)
                     schema_payload = parsed_data.get("extraction_result", parsed_data)
-                    results[text_hash] = LLMExtractionSchema(**schema_payload)
+                    results[text_hash] = LLMExtractionSchema.model_validate(schema_payload)
                 except Exception as e:
-                    # RAISE the error so we can see what Pydantic is complaining about
                     raise RuntimeError(f"Cache parse error for {text_hash}: {e}\nPayload: {schema_payload}") from e
             else:
                 results[text_hash] = None
@@ -57,7 +55,7 @@ def cache_extraction_result(text_hash: str, extraction_result: LLMExtractionSche
     try:
         cache_payload = {
             "message_hash": text_hash,
-            "extraction_result": extraction_result.model_dump(mode='json'),
+            "extraction_result": extraction_result.model_dump(mode='json', by_alias=True),
             "prompt_version": getattr(extraction_result, "prompt_version", None),
             "model_version": "gemini-2.5-flash",
             "confidence": extraction_result.confidence_score,

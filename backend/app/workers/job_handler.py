@@ -264,6 +264,9 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                             cache_extraction_result(text_hash, ext_result)
                             log_event(LogEvent.JOB_STARTED, "Extraction Result Cached", raw_message_id=msg_id)
 
+            except RETRYABLE_EXCEPTIONS as e:
+                raise e
+            
             except Exception as e:
                 gemini_response_status = "failed"
                 log_error(LogEvent.LLM_ERROR, error=e, message="AI Batch extraction failed completely", batch_id=batch_id)
