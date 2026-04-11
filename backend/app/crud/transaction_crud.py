@@ -66,8 +66,8 @@ def stream_transactions(db: Session, tenant_id: int, filters: TransactionQueryPa
     # Remove pagination limits for the export stream
     query = query.limit(None).offset(None)
 
-    # Removed the conflicting joinedload() block entirely because 
-    # get_transactions() already applies contains_eager() for these relationships.
+    # Enforce server-side cursors to prevent psycopg2 from loading the full dataset into memory
+    query = query.execution_options(stream_results=True)
 
     for transaction in query.yield_per(batch_size):
         yield transaction

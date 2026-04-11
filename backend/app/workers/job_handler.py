@@ -135,7 +135,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
         for job in jobs:
             raw_msg = raw_msg_map.get(job.raw_message_id)
             if not raw_msg:
-                log_error(LogEvent.JOB_FAILED, error=e, message=f"RawMessage {job.raw_message_id} not found.", level=logging.WARNING)
+                log_error(LogEvent.JOB_FAILED, error=ValueError("RawMessage not found"), message=f"RawMessage {job.raw_message_id} not found.", level=logging.WARNING)
                 job_results[job.job_id] = "dlq"
                 continue
 
