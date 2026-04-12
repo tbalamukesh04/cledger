@@ -61,12 +61,47 @@ def get_transactions(db: Session, tenant_id: int, filters: TransactionQueryParam
     return query
 
 def stream_transactions(db: Session, tenant_id: int, filters: TransactionQueryParams, batch_size: int = 1000):
-    query = get_transactions(db, tenant_id=tenant_id, filters=filters)
-    
-    # Remove pagination limits for the export stream
-    query = query.limit(None).offset(None)
+    """
+    Builds an independent streaming query for exports.
+    Does NOT reuse get_transactions() to avoid inheriting its baked-in OFFSET/LIMIT
+    clauses, which prevent SQLAlchemy from generating a clean full-table cursor.
+    expunge_all() is intentionally omitted: it detaches ORM objects mid-stream,
+    causing DetachedInstanceError when the CSV generator accesses raw_message/sender.
+    yield_per() handles memory pressure on its own via server-side cursors.
+    """
+    query = db.query(Transactions).join(
+        RawMessages, Transactions.raw_message_id == RawMessages.id, isouter=True
+    ).join(
+        Participants, RawMessages.sender_id == Participants.id, isouter=True
+    ).options(
+        contains_eager(Transactions.raw_message).contains_eager(RawMessages.sender)
+    ).filter(Transactions.tenant_id == tenant_id)
 
-    # Enforce server-side cursors to prevent psycopg2 from loading the full dataset into memory
+    if filters.status:
+        query = query.filter(Transactions.status == filters.status)
+
+    if filters.date_from:
+        query = query.filter(Transactions.txn_date >= filters.date_from)
+
+    if filters.date_to:
+        query = query.filter(Transactions.txn_date <= filters.date_to)
+
+    if filters.amount_min:
+        query = query.filter(Transactions.amount >= filters.amount_min)
+
+    if filters.amount_max:
+        query = query.filter(Transactions.amount <= filters.amount_max)
+
+    if filters.currency:
+        query = query.filter(Transactions.currency == filters.currency)
+
+    if filters.participant:
+        query = query.filter(or_(
+            Participants.displayname.ilike(f"%{filters.participant}%"),
+            Participants.phone.ilike(f"%{filters.participant}%")
+        ))
+
+    query = query.order_by(asc(Transactions.id))
     query = query.execution_options(stream_results=True)
 
     for transaction in query.yield_per(batch_size):
@@ -241,4 +276,3 @@ def upsert_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = Fal
             txn_data["remarks"] = txn_data.pop("description")
 
         return create_transaction(db, txn_data, commit=commit)
-  

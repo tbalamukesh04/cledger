@@ -46,15 +46,8 @@ async def list_transactions(
     """
     tenant_id = current_user.get("tenant_id")
     
-    # Build the base query with filters, sorting, and pagination
+    # get_transactions already applies offset/limit/sort from filters
     query = get_transactions(db, tenant_id=tenant_id, filters=filters)
-    
-    if filters.limit:
-        query = query.limit(filters.limit)
-    
-    if filters.offset:
-        query = query.offset(filters.offset)
-
     transactions = query.all()
 
     serialized_transactions = []
@@ -101,32 +94,22 @@ async def export_transactions_csv(
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
-    from app.core.config import api_security_settings
-
     tenant_id = current_user.get("tenant_id")
-    query = get_transactions(db, tenant_id=tenant_id, filters=filters)
-
-    total_count = query.count()
-    if total_count > api_security_settings.MAX_EXPORT_ROWS:
-        raise HTTPException(
-            status_code = 413, 
-            detail = f"Export payload too large. Maximum {api_security_settings.MAX_EXPORT_ROWS} rows allowed."
-        )
-
+    
     transaction_stream = stream_transactions(
-        db = db,
-        tenant_id = tenant_id,
-        filters = filters,
+        db=db,
+        tenant_id=tenant_id,
+        filters=filters,
         batch_size=1000
     )
 
     csv_generator = generate_transaction_csv_rows(transaction_stream, EXPORT_CSV_HEADERS)
 
     return StreamingResponse(
-        content = csv_generator,
+        content=csv_generator,
         media_type="text/csv",
         headers={
-            "Content-Disposition": "attachment; filename=transactions.csv"
+            "Content-Disposition": "attachment; filename=transactions_export.csv"
         }
     )
 
