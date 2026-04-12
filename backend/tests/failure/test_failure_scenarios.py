@@ -259,7 +259,7 @@ class TestWorkerInterruption:
         mock_redis.flushall()
         # 1. Setup DB state for multiple incoming messages while offline
         test_group = Groups(group_id="test_group_restart", groupname="Test Group")
-        test_participant = Participants(phone="8888888888", displayname="Test User 2")
+        test_participant = Participants(phone="7777777777", displayname="Test User 2")
         db_session.add_all([test_group, test_participant])
         db_session.flush()
 

@@ -3,6 +3,7 @@ import logging
 from dotenv import load_dotenv
 import redis
 from app.core.log_events import LogEvent
+from app.utils.logger import log_event
 
 load_dotenv()
 

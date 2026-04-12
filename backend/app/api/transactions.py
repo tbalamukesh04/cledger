@@ -177,7 +177,7 @@ async def review_transaction(
             )
             
             if not updated_transaction:
-                raise HTTPException(status = 500, detail = "Failed to correct transaction")
+                raise HTTPException(status_code = 500, detail = "Failed to correct transaction")
             db.commit()
             db.refresh(updated_transaction)
             transaction = updated_transaction
@@ -193,7 +193,7 @@ async def review_transaction(
                 actor_identifier = actor_identifier
             )
             if not updated_transaction:
-                raise HTTPException(status = 500, detail = "Failed to invalidate transaction")
+                raise HTTPException(status_code = 500, detail = "Failed to invalidate transaction")
             db.commit()
             db.refresh(updated_transaction)
             transaction = updated_transaction

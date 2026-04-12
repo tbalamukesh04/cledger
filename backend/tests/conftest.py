@@ -52,3 +52,16 @@ def mock_gemini():
     """Provides a mocked Gemini API client to prevent real LLM calls."""
     with patch('app.ai.gemini_client.GeminiClient.generate_content') as mock_generate:
         yield mock_generate
+
+def pytest_collection_modifyitems(config, items):
+    """Automatically apply markers based on directory structure."""
+    for item in items:
+        parts = item.path.parts
+        if "unit" in parts:
+            item.add_marker(pytest.mark.unit)
+        elif "integration" in parts:
+            item.add_marker(pytest.mark.integration)
+        elif "failure" in parts:
+            item.add_marker(pytest.mark.failure)
+        elif "performance" in parts:
+            item.add_marker(pytest.mark.performance)
