@@ -63,21 +63,6 @@ def setup_test_data(db, message_text: str):
     )
     return raw_msg.id, job
 
-@pytest.fixture(scope="function")
-def db_session():
-    """Provides an isolated database session and cleans up after the test completes."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        # Cascade delete to keep testing isolated and idempotent
-        db.query(Transactions).delete()
-        db.query(RawMessages).delete()
-        db.query(Groups).delete()
-        db.query(Participants).delete()
-        db.commit()
-        db.close()
-
 class MockExtractionResult:
     """A lightweight mock of the Pydantic extraction schema."""
     def __init__(self, amount, currency, transaction_verb, transaction_date, description, confidence_score):

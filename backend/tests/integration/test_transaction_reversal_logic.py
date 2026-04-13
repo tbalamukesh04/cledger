@@ -12,8 +12,14 @@ from app.models.raw_messages import RawMessages
 from app.models.groups import Groups
 from app.models.participants import Participants
 from app.crud.transaction_crud import upsert_transaction
+from app.core.jwt_utils import create_access_token
 
 client = TestClient(app)
+
+@pytest.fixture(scope="module")
+def auth_headers():
+    token = create_access_token(user_id="admin_user", tenant_id=1, role="admin")
+    return {"Authorization": f"Bearer {token}"}
 
 @pytest.fixture(scope="module")
 def db_session():
@@ -59,7 +65,7 @@ def create_base_data(db):
     
     return txn, raw_msg
 
-def test_transaction_correction_and_snapshot_integrity(db_session):
+def test_transaction_correction_and_snapshot_integrity(db_session, auth_headers):
     """Tests Scenarios 1 & 4: Correction workflow and Snapshot Integrity"""
     txn, _ = create_base_data(db_session)
     txn_id = txn.id
@@ -70,7 +76,7 @@ def test_transaction_correction_and_snapshot_integrity(db_session):
     }
     
     # Scenario 1: Admin edits amount
-    response = client.post(f"/api/v1/transactions/{txn_id}/correct", json=correct_payload)
+    response = client.post(f"/api/v1/transactions/{txn_id}/correct", json=correct_payload, headers=auth_headers)
     assert response.status_code == 200
     
     # Verify DB State updated correctly
@@ -93,14 +99,14 @@ def test_transaction_correction_and_snapshot_integrity(db_session):
     assert float(latest_audit.new_value["amount"]) == 150.0  # Corrected Snapshot
     assert latest_audit.old_value != latest_audit.new_value
 
-def test_worker_protection_rule(db_session):
+def test_worker_protection_rule(db_session, auth_headers):
     """Tests Scenario 3a: Worker cannot overwrite CORRECTED transactions"""
     # 1. Setup: Create a transaction and correct it
     txn, raw_msg = create_base_data(db_session)
     txn_id = txn.id
     
     correct_payload = {"amount": 200.00, "remarks": "Manual correction"}
-    client.post(f"/api/v1/transactions/{txn_id}/correct", json=correct_payload)
+    client.post(f"/api/v1/transactions/{txn_id}/correct", json=correct_payload, headers=auth_headers)
     
     db_session.expire_all()
     corrected_txn = db_session.query(Transactions).filter(Transactions.id == txn_id).first()
@@ -125,14 +131,14 @@ def test_worker_protection_rule(db_session):
     assert final_txn.amount == Decimal("200.00") # Maintained the corrected amount, ignored 50.00
     assert final_txn.id == result_txn.id
 
-def test_worker_protection_rule_invalidated(db_session):
+def test_worker_protection_rule_invalidated(db_session, auth_headers):
     """Tests Scenario 3b: Worker cannot overwrite INVALIDATED transactions"""
     # 1. Setup: Create a transaction and invalidate it
     txn, raw_msg = create_base_data(db_session)
     txn_id = txn.id
     
     invalidate_payload = {"reason": "Mistake by AI, not a transaction"}
-    client.post(f"/api/v1/transactions/{txn_id}/invalidate", json=invalidate_payload)
+    client.post(f"/api/v1/transactions/{txn_id}/invalidate", json=invalidate_payload, headers=auth_headers)
     
     db_session.expire_all()
     invalidated_txn = db_session.query(Transactions).filter(Transactions.id == txn_id).first()

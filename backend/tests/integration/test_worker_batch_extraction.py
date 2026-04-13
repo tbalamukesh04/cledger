@@ -13,9 +13,24 @@ from app.config.logging_config import setup_logging
 
 load_dotenv()
 
-def test_worker_batch_extraction():
+def test_worker_batch_extraction(mock_gemini):
     setup_logging()
     
+    # Bypass the network to avoid 429/503 errors
+    mock_gemini.return_value = {
+        "candidates": [{
+            "content": {
+                "parts": [{
+                    "text": '''[
+                        {"id": 101, "amount": 500, "currency": "ZMW", "transaction_verb": "credit", "counterparty": "John", "confidence": 0.95}, 
+                        {"id": 102, "amount": 150000, "currency": "ZMW", "transaction_verb": "debit", "counterparty": "Shoprite", "confidence": 0.98}, 
+                        {"id": 103, "amount": null, "currency": null, "transaction_verb": "none", "counterparty": "None", "confidence": 0.85}
+                    ]'''
+                }]
+            }
+        }]
+    }
+        
     msg1 = PreprocessedPayload(
         raw_message_id=101, participant_id=1, group_id=None, normalized_timestamp=datetime.now(timezone.utc),
         message_id="wamid.BATCH_1", message_type="text", normalized_text="Received 500 ZMW for rent from John",

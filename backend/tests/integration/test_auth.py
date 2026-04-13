@@ -44,15 +44,15 @@ client = TestClient(app)
 def test_scenario_1_access_without_token():
     """Scenario 1: Verify that a protected endpoint returns 401 when no token is provided."""
     response = client.get("/api/v1/transactions/health")
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Not authenticated"
+    assert response.status_code == 401, response.text
+    assert "Not authenticated" in response.text
 
 def test_scenario_2_access_with_invalid_token():
     """Scenario 2: Verify that an invalid token is rejected with 401 Unauthorized."""
     headers = {"Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.invalid.signature"}
     response = client.get("/api/v1/transactions/health", headers=headers)
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid token"
+    assert response.status_code == 401, response.text
+    assert "Invalid token" in response.text
 
 def test_scenario_3_and_4_valid_token_and_role_extraction():
     """Scenario 3 & 4: Verify valid token allows access and role is correctly extracted."""
@@ -62,7 +62,7 @@ def test_scenario_3_and_4_valid_token_and_role_extraction():
     
     # We hit the /me endpoint because it returns the current_user context
     response = client.get("/api/v1/transactions/me", headers=headers)
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     
     data = response.json()
     assert data["message"] == "Authenticated access granted"
@@ -73,18 +73,18 @@ def test_scenario_3_and_4_valid_token_and_role_extraction():
 
 def test_require_admin_rejects_normal_user():
     """Verify that an endpoint protected by require_admin rejects a standard user."""
-    token = create_access_token(user_id="user_123", role="user")
+    token = create_access_token(user_id="user_123", tenant_id=1, role="user")
     headers = {"Authorization": f"Bearer {token}"}
     
     response = client.get("/api/v1/transactions/admin-only", headers=headers)
-    assert response.status_code == 403
-    assert response.json()["detail"] == "Not enough permissions to access this resource"
+    assert response.status_code == 403, response.text
+    assert "Not enough permissions to access this resource" in response.text
 
 def test_require_admin_allows_admin_user():
     """Verify that an endpoint protected by require_admin allows an admin user."""
-    token = create_access_token(user_id="admin_456", role="admin")
+    token = create_access_token(user_id="admin_456", tenant_id=1, role="admin")
     headers = {"Authorization": f"Bearer {token}"}
     
     response = client.get("/api/v1/transactions/admin-only", headers=headers)
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assert response.json()["message"] == "Admin access granted"

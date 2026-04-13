@@ -1,8 +1,14 @@
 import os
+
+os.environ["WHATSAPP_APP_SECRET"] = "dummy_secret_for_testing"
+os.environ["WEBHOOK_VERIFY_TOKEN"] = "dummy_secret_for_testing"
+os.environ["APP_SECRET"] = "dummy_secret_for_testing"
+
 import redis 
 import pytest
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+
 from sqlalchemy.orm import sessionmaker
 from unittest.mock import patch
 

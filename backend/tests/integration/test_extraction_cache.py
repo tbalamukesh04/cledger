@@ -66,7 +66,7 @@ def test_extraction_cache_lifecycle():
     assert cached_result.amount == 500.0
     assert cached_result.counterparty == "Rahul"
     assert cached_result.transaction_verb == "debit"
-    assert cached_result.confidence_result == 0.98
+    assert cached_result.confidence_score == 0.98
 
 def test_cache_batch_mixed_results():
     """
@@ -88,7 +88,7 @@ def test_cache_batch_mixed_results():
         transaction_verb="debit",
         counterparty="groceries",
         reference=None,
-        confidence_score=0.90
+        confidence=0.90
     )
     cache_extraction_result(hash_hit, hit_schema)
     

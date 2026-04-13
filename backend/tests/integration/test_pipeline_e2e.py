@@ -1,10 +1,20 @@
 import os
 import json
 import time
-import requests
 import hmac
 import hashlib
-from dotenv import load_dotenv
+import pytest
+from unittest.mock import patch
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def setup_app_state(mock_redis):
+    app.state.redis = mock_redis
+    yield
 
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -17,10 +27,34 @@ from app.database.database import SessionLocal
 from app.models.raw_messages import RawMessages
 from app.models.transactions import Transactions
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+WEBHOOK_URL = "/api/v1/webhook"
+APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "dummy_secret_for_testing")
 
-WEBHOOK_URL = "http://127.0.0.1:8000/api/v1/webhook"
-APP_SECRET = os.getenv("WEBHOOK_VERIFY_TOKEN", "dummy_secret")
+WEBHOOK_URL = "/api/v1/webhook"
+APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "dummy_secret_for_testing")
+
+class MockExtractionResult:
+    def __init__(self, msg_id):
+        self.id = msg_id
+        self.amount = 500.0
+        self.currency = "ZMW"
+        self.transaction_verb = "credit"
+        self.transaction_date = "2026-03-24"
+        self.description = "E2E pipeline test"
+        self.confidence_score = 0.95
+        self.confidence = 0.95
+
+    def model_dump(self, **kwargs):
+        return {
+            "id": self.id,
+            "amount": self.amount,
+            "currency": self.currency,
+            "transaction_verb": self.transaction_verb,
+            "transaction_date": self.transaction_date,
+            "description": self.description,
+            "confidence_score": self.confidence_score,
+            "confidence": self.confidence
+        }
 
 def generate_signature(payload_bytes: bytes, secret: str) -> str:
     signature = hmac.new(
@@ -51,18 +85,28 @@ def trigger_webhook(phone: str, msg_id: str, text: str) -> bool:
         'x-hub-signature-256': generate_signature(payload_bytes, APP_SECRET)
     }
     
-    response = requests.post(WEBHOOK_URL, data=payload_bytes, headers=headers)
+    response = client.post(WEBHOOK_URL, content=payload_bytes, headers=headers)
     if response.status_code != 200:
         print(f"❌ Webhook Rejected! Status: {response.status_code}, Body: {response.text}")
         return False
     return True
 
-def test_pipeline_scoring_e2e():
+@patch("app.workers.job_handler.get_cached_extractions_batch")
+@patch("app.workers.job_handler.process_extraction_batch")
+@patch("app.workers.job_handler.parse_batch_response")
+def test_pipeline_scoring_e2e(mock_parse, mock_process, mock_cache, mock_redis):
     setup_logging()
     db = SessionLocal()
     
-    redis_client.delete(WEBHOOK_QUEUE_NAME)
+    # Bypass the network
+    mock_cache.return_value = {}
+    mock_process.return_value = "dummy_llm_response"
     
+    def mock_parse_side_effect(raw_resp, candidate_ids, batch_id):
+        return {str(cid): MockExtractionResult(cid) for cid in candidate_ids}
+    mock_parse.side_effect = mock_parse_side_effect
+    
+    mock_redis.delete(WEBHOOK_QUEUE_NAME)
     run_id = str(int(time.time()))
     test_phone = f"26099955{run_id[-3:]}"
     
@@ -102,7 +146,7 @@ def test_pipeline_scoring_e2e():
     
     batch_jobs = []
     while True:
-        result = redis_client.rpop(WEBHOOK_QUEUE_NAME)
+        result = mock_redis.rpop(WEBHOOK_QUEUE_NAME)
         if not result:
             break
         batch_jobs.append(WebhookJobPayload(**json.loads(result)))

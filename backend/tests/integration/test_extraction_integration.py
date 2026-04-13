@@ -18,9 +18,21 @@ logger = logging.getLogger(__name__)
 
 import pytest
 
-def test_llm_extraction_integration():
-    if not os.getenv("GEMINI_API_KEY"):
-        pytest.skip("GEMINI_API_KEY environment variable is missing.")
+def test_llm_extraction_integration(mock_gemini):
+    # Mock the Gemini API response to prevent 429/503 network failures
+    mock_gemini.return_value = {
+        "candidates": [{
+            "content": {
+                "parts": [{
+                    "text": '''[
+                        {"id": 100, "amount": 500, "currency": "INR", "transaction_verb": "debit", "counterparty": "Rahul", "confidence": 0.95}, 
+                        {"id": 101, "amount": 1200, "currency": "INR", "transaction_verb": "debit", "reference": "rent", "confidence": 0.98}, 
+                        {"id": 102, "amount": null, "currency": null, "transaction_verb": "credit", "counterparty": "John", "confidence": 0.85}
+                    ]'''
+                }]
+            }
+        }]
+    }
         
     scorer = TransactionScorer()
     
@@ -43,7 +55,8 @@ def test_llm_extraction_integration():
             message_type="text",
             normalized_text=text,
             message_hash=f"hash_{idx}",
-            idempotency_identifier=f"idem_{idx}"
+            idempotency_identifier=f"idem_{idx}",
+            text_hash=f"thash_{idx}"
         )
         
         context = ProcessingContext(payload=payload)

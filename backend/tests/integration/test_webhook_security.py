@@ -4,13 +4,21 @@ import hashlib
 import json
 import time
 import requests
-from dotenv import load_dotenv
+import pytest
+from fastapi.testclient import TestClient
+from app.main import app
 
-# Load environment variables to get the App Secret
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+client = TestClient(app)
 
-WEBHOOK_URL = "http://localhost:8000/api/v1/webhook"
-APP_SECRET = os.getenv("WHATSAPP_APP_SECRET", os.getenv("WEBHOOK_VERIFY_TOKEN", "dummy_secret_for_testing"))
+@pytest.fixture(autouse=True)
+def setup_app_state(mock_redis):
+    """Ensure app.state.redis exists for both middleware and dependencies during testing."""
+    app.state.redis = mock_redis
+    yield
+
+WEBHOOK_URL = "/api/v1/webhook"
+# Dynamically fetch the EXACT secret the app uses to guarantee signatures match
+APP_SECRET = os.getenv("APP_SECRET", "dummy_secret_for_testing")
 
 def generate_signature(payload_bytes: bytes, secret: str) -> str:
     """Generates the HMAC SHA256 signature as Meta does."""
@@ -46,16 +54,16 @@ def security_payload():
     valid_signature = generate_signature(payload_bytes, APP_SECRET)
     return payload_bytes, valid_signature
 
-def test_missing_signature_header(security_payload):
+def test_missing_signature_header(security_payload, mock_redis):
     payload_bytes, _ = security_payload
-    res = requests.post(WEBHOOK_URL, data=payload_bytes, headers={'Content-Type': 'application/json'})
+    res = client.post(WEBHOOK_URL, content=payload_bytes, headers={'Content-Type': 'application/json'})
     assert res.status_code == 403, f"Expected 403, got {res.status_code}"
 
-def test_invalid_signature(security_payload):
+def test_invalid_signature(security_payload, mock_redis):
     payload_bytes, _ = security_payload
-    res = requests.post(
+    res = client.post(
         WEBHOOK_URL, 
-        data=payload_bytes, 
+        content=payload_bytes, 
         headers={
             'Content-Type': 'application/json',
             'x-hub-signature-256': 'sha256=abcdef1234567890bogussignature'
@@ -63,15 +71,15 @@ def test_invalid_signature(security_payload):
     )
     assert res.status_code == 403, f"Expected 403, got {res.status_code}"
 
-def test_valid_signature_and_duplicate(security_payload):
+def test_valid_signature_and_duplicate(security_payload, mock_redis, db_session):
     payload_bytes, valid_signature = security_payload
     headers = {
         'Content-Type': 'application/json',
         'x-hub-signature-256': valid_signature
     }
     
-    res = requests.post(WEBHOOK_URL, data=payload_bytes, headers=headers)
+    res = client.post(WEBHOOK_URL, content=payload_bytes, headers=headers)
     assert res.status_code == 200 and res.text == "EVENT_RECEIVED", f"Expected 200 OK EVENT_RECEIVED, got {res.status_code} - {res.text}"
 
-    res_dup = requests.post(WEBHOOK_URL, data=payload_bytes, headers=headers)
+    res_dup = client.post(WEBHOOK_URL, content=payload_bytes, headers=headers)
     assert res_dup.status_code == 200 and res_dup.text == "DUPLICATE_IGNORED", f"Expected 200 OK DUPLICATE_IGNORED, got {res_dup.status_code} - {res_dup.text}"

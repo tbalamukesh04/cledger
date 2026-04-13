@@ -8,6 +8,7 @@ from app.main import app
 from app.core.auth_dependencies import require_admin, get_current_user
 from app.api.dependencies import get_db
 from app.models.transactions import TransactionStatus, Transactions
+from app.core.jwt_utils import create_access_token
 
 client = TestClient(app)
 
@@ -15,19 +16,20 @@ client = TestClient(app)
 # Test Setup & Fixtures
 # ---------------------------------------------------------
 
-MOCK_ADMIN = {"sub": "admin_user", "tenant_id": 1, "role": "admin"}
-
-def override_require_admin():
-    return MOCK_ADMIN
-
 def override_get_db():
     mock_db = MagicMock()
     yield mock_db
 
-# Override authentication dependencies and database session
-app.dependency_overrides[require_admin] = override_require_admin
-app.dependency_overrides[get_current_user] = override_require_admin
-app.dependency_overrides[get_db] = override_get_db
+@pytest.fixture(autouse=True)
+def setup_overrides():
+    app.dependency_overrides[get_db] = override_get_db
+    yield
+    app.dependency_overrides.clear()
+
+@pytest.fixture
+def auth_headers():
+    token = create_access_token(user_id="admin_user", tenant_id=1, role="admin")
+    return {"Authorization": f"Bearer {token}"}
 
 @pytest.fixture
 def mock_review_needed_txn():
@@ -44,10 +46,11 @@ def mock_review_needed_txn():
 # ---------------------------------------------------------
 # Scenario 1 & 6: Correct Action & Audit Verification
 # ---------------------------------------------------------
+@patch("sqlalchemy.orm.Session.refresh")
 @patch("app.api.transactions.get_transaction_by_id")
 @patch("app.api.transactions.correct_transaction_service")
 @patch("app.api.transactions.get_transaction_audit_history")
-def test_correct_action_and_audit(mock_audit, mock_correct_svc, mock_get_txn, mock_review_needed_txn):    
+def test_correct_action_and_audit(mock_audit, mock_correct_svc, mock_get_txn, mock_refresh, mock_review_needed_txn, auth_headers):       
     # Setup mocks
     mock_get_txn.return_value = mock_review_needed_txn
     
@@ -82,7 +85,7 @@ def test_correct_action_and_audit(mock_audit, mock_correct_svc, mock_get_txn, mo
     response = client.post(url, json={
         "action": "correct",
         "corrected_fields": {"amount": 120.0}
-    })
+    }, headers=auth_headers)
 
     # Assert basic success
     assert response.status_code == 200
@@ -104,10 +107,11 @@ def test_correct_action_and_audit(mock_audit, mock_correct_svc, mock_get_txn, mo
 # ---------------------------------------------------------
 # Scenario 2 & 6: Invalidate Action & Audit Verification
 # ---------------------------------------------------------
+@patch("sqlalchemy.orm.Session.refresh")
 @patch("app.api.transactions.get_transaction_by_id")
 @patch("app.api.transactions.invalidate_transaction_service")
 @patch("app.api.transactions.get_transaction_audit_history")
-def test_invalidate_action_and_audit(mock_audit, mock_invalidate_svc, mock_get_txn, mock_review_needed_txn):
+def test_invalidate_action_and_audit(mock_audit, mock_invalidate_svc, mock_get_txn, mock_refresh, mock_review_needed_txn, auth_headers):
     # Setup mocks
     mock_get_txn.return_value = mock_review_needed_txn
     
@@ -140,7 +144,7 @@ def test_invalidate_action_and_audit(mock_audit, mock_invalidate_svc, mock_get_t
     url = str(app.url_path_for("review_transaction", transaction_id=100))
     response = client.post(url, json={
         "action": "invalidate"
-    })
+    }, headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -160,7 +164,7 @@ def test_invalidate_action_and_audit(mock_audit, mock_invalidate_svc, mock_get_t
 # ---------------------------------------------------------
 @patch("app.api.transactions.invalidate_transaction_service")
 @patch("app.api.transactions.get_transaction_by_id")
-def test_invalid_status_rejection(mock_get_txn, mock_invalidate_svc):
+def test_invalid_status_rejection(mock_get_txn, mock_invalidate_svc, auth_headers):
     # Mock a transaction that is already PARSED
     txn = MagicMock()
     txn.status = TransactionStatus.PARSED
@@ -173,7 +177,7 @@ def test_invalid_status_rejection(mock_get_txn, mock_invalidate_svc):
     url = str(app.url_path_for("review_transaction", transaction_id=100))
     response = client.post(url, json={
         "action": "invalidate"
-    })
+    }, headers=auth_headers)
 
     # Should reject the review action with a 400 Bad Request
     assert response.status_code == 400
@@ -182,14 +186,13 @@ def test_invalid_status_rejection(mock_get_txn, mock_invalidate_svc):
 # ---------------------------------------------------------
 # Scenario 4: Missing Corrected Fields
 # ---------------------------------------------------------
-def test_missing_corrected_fields_for_correct_action():
+def test_missing_corrected_fields_for_correct_action(auth_headers):
     url = str(app.url_path_for("review_transaction", transaction_id=100))
     
     # Send action='correct' without 'corrected_fields'
     response = client.post(url, json={
         "action": "correct"
-    })
-
+    }, headers=auth_headers)
     # FastAPI returns 422 for Pydantic Schema validations, or 400 for manual route validations
     assert response.status_code in [400, 422]
 
@@ -198,18 +201,10 @@ def test_missing_corrected_fields_for_correct_action():
 # Scenario 5: Unauthorized Access
 # ---------------------------------------------------------
 def test_unauthorized_access():
-    # Remove the mock admin overrides
-    app.dependency_overrides.pop(require_admin, None)
-    app.dependency_overrides.pop(get_current_user, None)
-
     url = str(app.url_path_for("review_transaction", transaction_id=100))
     response = client.post(url, json={
         "action": "invalidate"
     })
 
-    # Should be rejected with a 401 Unauthorized
+    # Should be rejected with a 401 Unauthorized (no auth_headers provided)
     assert response.status_code == 401
-
-    # Restore overrides for safety in subsequent tests
-    app.dependency_overrides[require_admin] = override_require_admin
-    app.dependency_overrides[get_current_user] = override_require_admin

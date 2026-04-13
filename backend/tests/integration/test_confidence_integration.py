@@ -113,7 +113,7 @@ def test_worker_pipeline_confidence_persistence(
     
     extraction_meta = mock_raw_msg.parsing_meta["ai_extraction"]
     assert extraction_meta["status"] == "SUCCESS"
-    assert "confidence_score" in extraction_meta
+    assert "confidence" in extraction_meta
     
     # Verify the value was normalized properly and stored in the database mapping
-    assert extraction_meta["confidence_score"] == 0.82
+    assert extraction_meta["confidence"] == 0.82

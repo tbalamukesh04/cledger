@@ -3,14 +3,20 @@ import json
 import time
 import hmac
 import hashlib
-import requests
-from dotenv import load_dotenv
+import pytest
+from fastapi.testclient import TestClient
 
-# Load environment variables
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+from app.main import app
 
-WEBHOOK_URL = "http://localhost:8000/api/v1/webhook"
-APP_SECRET = os.getenv("WHATSAPP_APP_SECRET", os.getenv("WEBHOOK_VERIFY_TOKEN", "dummy_secret"))
+client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def setup_app_state(mock_redis):
+    app.state.redis = mock_redis
+    yield
+
+WEBHOOK_URL = "/api/v1/webhook"
+APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "dummy_secret_for_testing")
 
 def generate_signature(payload_bytes: bytes, secret: str) -> str:
     """Generates the HMAC SHA256 signature as Meta does."""
@@ -21,7 +27,7 @@ def generate_signature(payload_bytes: bytes, secret: str) -> str:
     ).hexdigest()
     return f"sha256={signature}"
 
-def send_webhook(payload: dict) -> requests.Response:
+def send_webhook(payload: dict):
     """Helper to send the payload with the correct headers."""
     # Serialize tightly as Meta does
     payload_bytes = json.dumps(payload, separators=(',', ':')).encode('utf-8')
@@ -31,7 +37,7 @@ def send_webhook(payload: dict) -> requests.Response:
         'Content-Type': 'application/json',
         'x-hub-signature-256': signature
     }
-    return requests.post(WEBHOOK_URL, data=payload_bytes, headers=headers)
+    return client.post(WEBHOOK_URL, content=payload_bytes, headers=headers)
 
 def create_mock_payload(msg_id, sender_phone, sender_name, group_id=None, text="Test"):
     """Helper to generate a Meta-compliant webhook payload."""

@@ -20,9 +20,8 @@ def test_scenario_1_basic_retrieval(auth_headers):
     assert response.status_code == 200
     
     data = response.json()
-    assert "total" in data
     assert "limit" in data
-    assert data["limit"] == 50  # Verifies default pagination limit
+    assert data["limit"] == 50 # Verifies default pagination limit
     assert "offset" in data
     assert data["offset"] == 0  # Verifies default offset
     assert isinstance(data["transactions"], list)

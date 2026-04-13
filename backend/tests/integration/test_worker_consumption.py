@@ -1,10 +1,19 @@
 import os
 import json
 import time
-import requests
+import pytest
 import hmac
 import hashlib
-from dotenv import load_dotenv
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def setup_app_state(mock_redis):
+    app.state.redis = mock_redis
+    yield
 
 # Ensure we can import from the app module
 import sys
@@ -15,10 +24,8 @@ from app.schemas.jobs import WebhookJobPayload
 from app.workers.job_handler import process_webhook_batch
 from app.config.logging_config import setup_logging
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
-
-WEBHOOK_URL = "http://127.0.0.1:8000/api/v1/webhook"
-APP_SECRET = os.getenv("WEBHOOK_VERIFY_TOKEN", "dummy_secret")
+WEBHOOK_URL = "/api/v1/webhook"
+APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "dummy_secret_for_testing")
 
 def generate_signature(payload_bytes: bytes, secret: str) -> str:
     signature = hmac.new(
@@ -28,9 +35,9 @@ def generate_signature(payload_bytes: bytes, secret: str) -> str:
     ).hexdigest()
     return f"sha256={signature}"
 
-def test_worker_consumption():
+def test_worker_consumption(mock_redis):
     setup_logging()
-    redis_client.delete(WEBHOOK_QUEUE_NAME)
+    mock_redis.delete(WEBHOOK_QUEUE_NAME)
     
     run_id = str(int(time.time()))
     test_phone = f"26099900{run_id[-3:]}"
@@ -54,14 +61,14 @@ def test_worker_consumption():
         'x-hub-signature-256': generate_signature(payload_bytes, APP_SECRET)
     }
     
-    response = requests.post(WEBHOOK_URL, data=payload_bytes, headers=headers)
+    response = client.post(WEBHOOK_URL, content=payload_bytes, headers=headers)
     assert response.status_code == 200, f"Webhook failed: {response.text}"
     
     time.sleep(0.5)
-    q_len = redis_client.llen(WEBHOOK_QUEUE_NAME)
+    q_len = mock_redis.llen(WEBHOOK_QUEUE_NAME)
     assert q_len > 0, "Job did not enter queue!"
     
-    result = redis_client.brpop(WEBHOOK_QUEUE_NAME, timeout=5)
+    result = mock_redis.brpop(WEBHOOK_QUEUE_NAME, timeout=5)
     assert result is not None, "Failed to pop job from queue."
         
     _, payload_str = result

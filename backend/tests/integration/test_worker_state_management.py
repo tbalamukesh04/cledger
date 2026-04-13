@@ -1,10 +1,20 @@
 import os
 import json
 import time
-import requests
 import hmac
 import hashlib
-from dotenv import load_dotenv
+import pytest
+from unittest.mock import patch
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def setup_app_state(mock_redis):
+    app.state.redis = mock_redis
+    yield
 
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -16,10 +26,8 @@ from app.config.logging_config import setup_logging
 from app.database.database import SessionLocal
 from app.models.raw_messages import RawMessages
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
-
-WEBHOOK_URL = "http://127.0.0.1:8000/api/v1/webhook"
-APP_SECRET = os.getenv("WEBHOOK_VERIFY_TOKEN", "dummy_secret")
+WEBHOOK_URL = "/api/v1/webhook"
+APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "dummy_secret_for_testing")
 
 def generate_signature(payload_bytes: bytes, secret: str) -> str:
     signature = hmac.new(
@@ -35,8 +43,8 @@ def trigger_webhook(payload: dict) -> bool:
         'Content-Type': 'application/json',
         'x-hub-signature-256': generate_signature(payload_bytes, APP_SECRET)
     }
-    response = requests.post(WEBHOOK_URL, data=payload_bytes, headers=headers)
-    
+    response = client.post(WEBHOOK_URL, content=payload_bytes, headers=headers)
+
     # 1. Check for standard HTTP errors (like 403 Invalid Signature)
     if response.status_code != 200:
         print(f"❌ WEBHOOK REJECTED! Status: {response.status_code}, Body: {response.text}")
@@ -49,9 +57,9 @@ def trigger_webhook(payload: dict) -> bool:
         
     return True
 
-def get_job_from_queue() -> WebhookJobPayload | None:
+def get_job_from_queue(mock_redis_instance) -> WebhookJobPayload | None:
     time.sleep(0.5) 
-    result = redis_client.brpop(WEBHOOK_QUEUE_NAME, timeout=5)
+    result = mock_redis_instance.brpop(WEBHOOK_QUEUE_NAME, timeout=5)
     if not result:
         return None
     _, payload_str = result
@@ -72,9 +80,41 @@ def create_payload(phone: str, msg_id: str, text: str, timestamp: str) -> dict:
         }}]}]
     }
 
-def test_state_management_lifecycle():
+class MockExtractionResult:
+    """A lightweight mock of the Pydantic extraction schema for pipeline testing."""
+    def __init__(self, amount, confidence_score):
+        self.id = "dummy_id"
+        self.amount = amount
+        self.currency = "ZMW"
+        self.transaction_verb = "credit"
+        self.transaction_date = "2026-03-24"
+        self.description = "State management test"
+        self.confidence_score = confidence_score
+        self.confidence = confidence_score
+
+    def model_dump(self, **kwargs):
+        return {
+            "id": self.id,
+            "amount": self.amount,
+            "currency": self.currency,
+            "transaction_verb": self.transaction_verb,
+            "transaction_date": self.transaction_date,
+            "description": self.description,
+            "confidence_score": self.confidence_score,
+            "confidence": self.confidence
+        }
+
+@patch("app.workers.job_handler.get_cached_extractions_batch")
+@patch("app.workers.job_handler.process_extraction_batch")
+@patch("app.workers.job_handler.parse_batch_response")
+def test_state_management_lifecycle(mock_parse, mock_process, mock_cache, mock_redis):
     setup_logging()
-    redis_client.delete(WEBHOOK_QUEUE_NAME)
+    
+    # Bypass the network
+    mock_cache.return_value = {}
+    mock_process.return_value = "dummy_llm_response"
+    
+    mock_redis.delete(WEBHOOK_QUEUE_NAME)
     
     run_id = str(int(time.time()))
     test_phone = f"26099900{run_id[-3:]}"
@@ -87,7 +127,7 @@ def test_state_management_lifecycle():
     success = trigger_webhook(payload_1)
     assert success is True, "FastAPI rejected the webhook!"
     
-    job_1 = get_job_from_queue()
+    job_1 = get_job_from_queue(mock_redis)
     assert job_1 is not None, "Failed to retrieve job from Redis!"
     
     msg_before = db.query(RawMessages).filter(RawMessages.id == job_1.raw_message_id).first()
@@ -95,6 +135,10 @@ def test_state_management_lifecycle():
     assert msg_before.processing_status == "pending"
     assert msg_before.processing_started_at is None
     
+    # Inject the mock response mapped to the job's raw_message_id with a high confidence score
+    mock_parse.return_value = {str(job_1.raw_message_id): MockExtractionResult(amount=500.0, confidence_score=0.95)}
+
+        # 1. First Run (Processing the message)
     process_webhook_batch([job_1])
     
     db.expire_all()
@@ -108,6 +152,7 @@ def test_state_management_lifecycle():
 
     time.sleep(1) 
     
+    # 2. Second Run (Duplicate check)
     result_map = process_webhook_batch([job_1])
     success = result_map.get(job_1.job_id) == "success"
     

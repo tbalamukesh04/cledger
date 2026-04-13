@@ -15,8 +15,14 @@ from app.models.transactions import Transactions, TransactionStatus
 from app.models.transaction_audit import TransactionAudit, TransactionAuditAction
 from app.schemas.jobs import WebhookJobPayload
 from app.workers.job_handler import process_webhook_batch
+from app.core.jwt_utils import create_access_token
 
 client = TestClient(app)
+
+@pytest.fixture
+def auth_headers():
+    token = create_access_token(user_id="admin_user", tenant_id=1, role="admin")
+    return {"Authorization": f"Bearer {token}"}
 
 class MockExtractionResult:
     """A lightweight mock of the Pydantic extraction schema for pipeline testing."""
@@ -65,7 +71,7 @@ def _cleanup(db, participant_id, group_id, raw_message_id, txn_id):
 @patch("app.workers.job_handler.get_cached_extractions_batch")
 @patch("app.workers.job_handler.process_extraction_batch")
 @patch("app.workers.job_handler.parse_batch_response")
-def test_full_transaction_lifecycle_e2e(mock_parse, mock_process, mock_cache):
+def test_full_transaction_lifecycle_e2e(mock_parse, mock_process, mock_cache, auth_headers):
     """
     Simulates the entire transaction lifecycle from AI extraction to admin invalidation,
     verifying state changes and full audit trail reconstruction.
@@ -166,8 +172,8 @@ def test_full_transaction_lifecycle_e2e(mock_parse, mock_process, mock_cache):
         # STEP 3: Admin Correction
         # -------------------------------------------------------------------
         correct_payload = {"amount": 750.00, "remarks": "Admin corrected amount"}
-        response = client.post(f"/api/v1/transactions/{txn_id}/correct", json=correct_payload)
-        assert response.status_code == 200
+        response = client.post(f"/api/v1/transactions/{txn_id}/correct", json=correct_payload, headers=auth_headers)
+        assert response.status_code == 200, response.text
         
         db.expire_all()
         txn = db.query(Transactions).filter(Transactions.id == txn_id).first()
@@ -178,8 +184,8 @@ def test_full_transaction_lifecycle_e2e(mock_parse, mock_process, mock_cache):
         # STEP 4: Admin Invalidation
         # -------------------------------------------------------------------
         invalidate_payload = {"reason": "Not a valid expense"}
-        response = client.post(f"/api/v1/transactions/{txn_id}/invalidate", json=invalidate_payload)
-        assert response.status_code == 200
+        response = client.post(f"/api/v1/transactions/{txn_id}/invalidate", json=invalidate_payload, headers=auth_headers)
+        assert response.status_code == 200, response.text
         
         db.expire_all()
         txn = db.query(Transactions).filter(Transactions.id == txn_id).first()

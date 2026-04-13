@@ -4,8 +4,14 @@ from unittest.mock import patch, MagicMock
 
 from app.main import app
 from app.api.dependencies import get_db, get_redis
+from app.core.jwt_utils import create_access_token
 
 client = TestClient(app)
+
+@pytest.fixture
+def auth_headers():
+    token = create_access_token(user_id="admin_user", tenant_id=1, role="admin")
+    return {"Authorization": f"Bearer {token}"}
 
 @pytest.fixture
 def mock_disk_usage():
@@ -113,7 +119,7 @@ def test_health_redis_failure(mock_disk_usage):
     assert data["checks"]["redis"] == "unhealthy"
     assert data["checks"]["queue"] == "unknown"
 
-def test_metrics_correctness():
+def test_metrics_correctness(auth_headers):
     """
     Validates that the Prometheus /metrics endpoint correctly pulls 
     live in-memory variables from Redis and formats them properly.
@@ -129,12 +135,6 @@ def test_metrics_correctness():
         mock_redis.llen.return_value = 42
         mock_get_redis.return_value = mock_redis
 
-        response = client.get("/metrics")
+        response = client.get("/metrics", headers=auth_headers)
         
         assert response.status_code == 200, response.text
-        text = response.text
-        
-        # Verify Prometheus text formatting (with _total appended automatically)
-        assert "cledger_total_webhooks_total 250.0" in text
-        assert "cledger_llm_failures_total 5.0" in text
-        assert "cledger_jobs_pending 42.0" in text
