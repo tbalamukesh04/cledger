@@ -1,15 +1,22 @@
+from tests.conftest import mock_redis
 import os
 import json
 import time
 import hmac
 import hashlib
-import requests
+import pytest
 from dotenv import load_dotenv
+from fastapi.testclient import TestClient
+from unittest.mock import MagicMock
+
+from app.main import app
+
+client = TestClient(app)
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-WEBHOOK_URL = "http://127.0.0.1:8000/api/v1/webhook"
-APP_SECRET = os.getenv("WEBHOOK_VERIFY_TOKEN", "dummy_secret")
+WEBHOOK_URL = "/api/v1/webhook"
+APP_SECRET = os.getenv("APP_SECRET", "dummy_secret_for_testing")
 
 def generate_signature(payload_bytes: bytes, secret: str) -> str:
     signature = hmac.new(
@@ -19,7 +26,9 @@ def generate_signature(payload_bytes: bytes, secret: str) -> str:
     ).hexdigest()
     return f"sha256={signature}"
 
-def test_webhook_latency():
+def test_webhook_latency(mock_redis):
+    mock_redis.incr = MagicMock(return_value=1)
+    app.state.redis = mock_redis
     run_id = str(time.time())
     payload = {
         "object": "whatsapp_business_account",
@@ -42,7 +51,7 @@ def test_webhook_latency():
     }
 
     start_time = time.perf_counter()
-    response = requests.post(WEBHOOK_URL, data=payload_bytes, headers=headers)
+    response = client.post(WEBHOOK_URL, content=payload_bytes, headers=headers)
     end_time = time.perf_counter()
 
     latency_ms = (end_time - start_time) * 1000

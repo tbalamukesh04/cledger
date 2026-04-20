@@ -67,7 +67,7 @@ def test_validation_1_constraints():
             amount=test_amount,
             currency="ZMW",
             txn_type="credit",
-            status="processed",
+            status="parsed",
             hash=mock_hash,
             parsing_meta={"source": "test_script", "confidence": 0.99}
         )
@@ -108,7 +108,7 @@ def test_validation_1_constraints():
             amount=Decimal("500.00"),
             currency="ZMW",
             txn_type="debit",
-            status="pending",
+            status="parsed",
             hash=f"diff_hash_{test_run_id}", 
         )
         db.add(duplicate_txn)

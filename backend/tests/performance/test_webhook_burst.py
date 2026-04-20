@@ -3,18 +3,22 @@ import json
 import time
 import hmac
 import hashlib
-import requests
 import concurrent.futures
+import pytest
 from dotenv import load_dotenv
+from fastapi.testclient import TestClient
+from unittest.mock import MagicMock
 
-from app.database.redis_client import redis_client, WEBHOOK_QUEUE_NAME
+from app.main import app
+from app.database.redis_client import WEBHOOK_QUEUE_NAME
+
+client = TestClient(app)
 
 # Load environment variables
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-# Use 127.0.0.1 to avoid localhost IPv6 DNS timeouts on Windows
-WEBHOOK_URL = "http://127.0.0.1:8000/api/v1/webhook"
-APP_SECRET = os.getenv("WEBHOOK_VERIFY_TOKEN", "dummy_secret")
+WEBHOOK_URL = "/api/v1/webhook"
+APP_SECRET = os.getenv("APP_SECRET", "dummy_secret_for_testing")
 
 def generate_signature(payload_bytes: bytes, secret: str) -> str:
     signature = hmac.new(
@@ -53,7 +57,7 @@ def send_single_webhook(run_id: str, index: int) -> dict:
 
     start_time = time.perf_counter()
     try:
-        response = requests.post(WEBHOOK_URL, data=payload_bytes, headers=headers, timeout=5)
+        response = client.post(WEBHOOK_URL, content=payload_bytes, headers=headers)
         latency_ms = (time.perf_counter() - start_time) * 1000
         return {
             "status": response.status_code,
@@ -61,7 +65,7 @@ def send_single_webhook(run_id: str, index: int) -> dict:
             "latency_ms": latency_ms,
             "error": None
         }
-    except requests.RequestException as e:
+    except Exception as e:
         latency_ms = (time.perf_counter() - start_time) * 1000
         return {
             "status": 500,
@@ -70,12 +74,16 @@ def send_single_webhook(run_id: str, index: int) -> dict:
             "error": str(e)
         }
 
-def test_webhook_burst_performance(total_requests=250, max_workers=20):
+def test_webhook_burst_performance(mock_redis):
+    mock_redis.incr = MagicMock(return_value=1)
+    app.state.redis = mock_redis
+
+    total_requests = 250
+    max_workers = 20
     run_id = str(int(time.time()))
     
-    redis_client.delete(WEBHOOK_QUEUE_NAME)
-    initial_q_len = redis_client.llen(WEBHOOK_QUEUE_NAME)
-    
+    mock_redis.delete(WEBHOOK_QUEUE_NAME)
+    initial_q_len = mock_redis.llen(WEBHOOK_QUEUE_NAME)
     successes = []
     failures = []
     latencies = []
@@ -96,7 +104,7 @@ def test_webhook_burst_performance(total_requests=250, max_workers=20):
 
     assert len(failures) == 0, f"Burst test encountered {len(failures)} failures."
 
-    final_q_len = redis_client.llen(WEBHOOK_QUEUE_NAME)
+    final_q_len = mock_redis.llen(WEBHOOK_QUEUE_NAME)
     expected_growth = len(successes)
     actual_growth = final_q_len - initial_q_len
     

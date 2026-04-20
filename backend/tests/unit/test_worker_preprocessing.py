@@ -1,15 +1,26 @@
+from tests.conftest import mock_redis
 import os
 import json
 import time
+import pytest
 import requests
 import hmac
 import hashlib
 from dotenv import load_dotenv
+from fastapi.testclient import TestClient
 
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.database.redis_client import redis_client, WEBHOOK_QUEUE_NAME
+from app.main import app
+from app.database.redis_client import WEBHOOK_QUEUE_NAME
+
+client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def setup_app_state(mock_redis):
+    app.state.redis = mock_redis
+    yield
 from app.schemas.jobs import WebhookJobPayload
 from app.workers.job_handler import process_webhook_batch
 from app.config.logging_config import setup_logging
@@ -17,8 +28,11 @@ from app.config.logging_config import setup_logging
 # Load environment variables
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-WEBHOOK_URL = "http://127.0.0.1:8000/api/v1/webhook"
-APP_SECRET = os.getenv("WEBHOOK_VERIFY_TOKEN", "dummy_secret")
+WEBHOOK_URL = "/api/v1/webhook"
+
+# Sync the signing secret EXACTLY with what security.py uses
+APP_SECRET = os.getenv("APP_SECRET", "dummy_secret_for_testing")
+os.environ["APP_SECRET"] = APP_SECRET
 
 def generate_signature(payload_bytes: bytes, secret: str) -> str:
     signature = hmac.new(
@@ -28,9 +42,9 @@ def generate_signature(payload_bytes: bytes, secret: str) -> str:
     ).hexdigest()
     return f"sha256={signature}"
 
-def test_worker_preprocessing():
+def test_worker_preprocessing(mock_redis):
     setup_logging()
-    redis_client.delete(WEBHOOK_QUEUE_NAME)
+    mock_redis.delete(WEBHOOK_QUEUE_NAME)
     
     run_id = str(int(time.time()))
     test_phone = f"26099900{run_id[-3:]}"
@@ -54,14 +68,15 @@ def test_worker_preprocessing():
         'x-hub-signature-256': generate_signature(payload_bytes, APP_SECRET)
     }
     
-    response = requests.post(WEBHOOK_URL, data=payload_bytes, headers=headers)
+    from unittest.mock import patch
+    with patch("app.api.webhook.verify_whatsapp_signature", return_value=True):
+        response = client.post(WEBHOOK_URL, content=payload_bytes, headers=headers)
     assert response.status_code == 200, f"Webhook failed: {response.text}"
-    
-    time.sleep(0.5) 
-    q_len = redis_client.llen(WEBHOOK_QUEUE_NAME)
+    time.sleep(0.5)
+    q_len = mock_redis.llen(WEBHOOK_QUEUE_NAME)
     assert q_len > 0, "Job did not enter queue!"
     
-    result = redis_client.brpop(WEBHOOK_QUEUE_NAME, timeout=5)
+    result = mock_redis.brpop(WEBHOOK_QUEUE_NAME, timeout=5)
     assert result is not None, "Failed to pop job from queue."
         
     _, payload_str = result

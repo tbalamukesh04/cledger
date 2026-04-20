@@ -20,6 +20,7 @@ def create_mock_context(text: str) -> ProcessingContext:
         message_type="text",
         normalized_text=text,
         message_hash="mock_hash",
+        text_hash = "mock_test_hash",
         idempotency_identifier="mock_idem"
     )
     return ProcessingContext(payload=payload)

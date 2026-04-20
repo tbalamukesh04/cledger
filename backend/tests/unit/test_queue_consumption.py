@@ -22,8 +22,8 @@ def test_redis_queue_push_pop_simulation(mock_redis):
     }
     mock_payload_str = json.dumps(mock_job)
     
-    # Simulate redis.brpop returning a tuple (queue_name, payload)
-    mock_redis.brpop.return_value = (WEBHOOK_QUEUE_NAME.encode('utf-8'), mock_payload_str.encode('utf-8'))
+    # 1. Push to the actual mock queue
+    mock_redis.lpush(WEBHOOK_QUEUE_NAME, mock_payload_str)
     
     # 2. Pop it off (Simulating what the worker does)
     result = mock_redis.brpop([WEBHOOK_QUEUE_NAME], timeout=5)
@@ -32,9 +32,6 @@ def test_redis_queue_push_pop_simulation(mock_redis):
     queue_name, popped_str = result
     
     # 3. Validate extraction
-    popped_job = WebhookJobPayload(**json.loads(popped_str.decode('utf-8')))
+    popped_job = WebhookJobPayload(**json.loads(popped_str))
     assert popped_job.job_id == "test_uuid_123"
     assert popped_job.raw_message_id == 999
-    
-    # 4. Verify Redis was actually called with correct parameters
-    mock_redis.brpop.assert_called_with([WEBHOOK_QUEUE_NAME], timeout=5)

@@ -80,8 +80,11 @@ def test_health_queue_buildup_unhealthy(mock_disk_usage):
     assert data["status"] == "unhealthy"
     assert data["checks"]["queue"] == "unhealthy"
 
-def test_health_db_failure(mock_disk_usage):
-    """Simulates a dropped Postgres connection."""
+@patch("app.api.health.log_error")
+def test_health_db_failure(mock_log_error, mock_disk_usage):
+    """Simulates a dropped Postgres connection and verifies error logging."""
+    from app.core.log_events import LogEvent
+    
     mock_db = MagicMock()
     mock_db.execute.side_effect = Exception("DB Connection Refused")
     
@@ -99,9 +102,17 @@ def test_health_db_failure(mock_disk_usage):
     data = response.json()
     assert data["status"] == "unhealthy"
     assert data["checks"]["database"] == "unhealthy"
+    
+    # Observability Validation: Ensure the failure wasn't silent
+    mock_log_error.assert_called_once()
+    assert mock_log_error.call_args[0][0] == LogEvent.SYSTEM_ERROR
+    assert "Database health check failed" in mock_log_error.call_args[1]["message"]
 
-def test_health_redis_failure(mock_disk_usage):
-    """Simulates a Redis crash/timeout."""
+@patch("app.api.health.log_error")
+def test_health_redis_failure(mock_log_error, mock_disk_usage):
+    """Simulates a Redis crash/timeout and verifies error logging."""
+    from app.core.log_events import LogEvent
+    
     mock_db = MagicMock()
     
     mock_redis = MagicMock()
@@ -118,7 +129,12 @@ def test_health_redis_failure(mock_disk_usage):
     assert data["status"] == "unhealthy"
     assert data["checks"]["redis"] == "unhealthy"
     assert data["checks"]["queue"] == "unknown"
-
+    
+    # Observability Validation: Ensure the failure wasn't silent
+    mock_log_error.assert_called_once()
+    assert mock_log_error.call_args[0][0] == LogEvent.SYSTEM_ERROR
+    assert "Redis health check failed" in mock_log_error.call_args[1]["message"]
+    
 def test_metrics_correctness(auth_headers):
     """
     Validates that the Prometheus /metrics endpoint correctly pulls 
@@ -138,3 +154,9 @@ def test_metrics_correctness(auth_headers):
         response = client.get("/metrics", headers=auth_headers)
         
         assert response.status_code == 200, response.text
+        
+        # Observability Validation: Ensure metrics are correctly exposed in the plaintext response
+        metrics_text = response.text
+        assert "250" in metrics_text, "Total webhooks metric missing or incorrect"
+        assert "5" in metrics_text, "LLM failures metric missing or incorrect"
+        assert "42" in metrics_text, "Queue depth metric missing or incorrect"

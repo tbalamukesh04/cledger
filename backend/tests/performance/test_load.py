@@ -37,21 +37,7 @@ logger = logging.getLogger(__name__)
 
 pytestmark = [pytest.mark.performance, pytest.mark.asyncio]
 
-APP_SECRET = os.getenv("WEBHOOK_VERIFY_TOKEN", "dummy_secret")
-
-try:
-    from app.core.config import settings
-    # Dynamically extract the backend's configured Meta/WhatsApp secret
-    _secret = None
-    for key in dir(settings):
-        if "SECRET" in key.upper() and "JWT" not in key.upper():
-            val = getattr(settings, key)
-            if isinstance(val, str) and val:
-                _secret = val
-                break
-    APP_SECRET = _secret or "dummy_secret"
-except Exception:
-    APP_SECRET = "dummy_secret"
+APP_SECRET = os.getenv("WEBHOOK_VERIFY_TOKEN", "dummy_secret_for_testing")
 
 def generate_signature(payload_bytes: bytes, secret: str) -> str:
     """Generates the HMAC SHA256 signature to emulate Meta's webhook security."""
@@ -85,13 +71,28 @@ async def mock_dependency(request: Request):
     """No-op dependency to bypass middleware during load testing."""
     return None
 
-async def monitor_queue_depth(mock_redis, interval=0.2):
-    """Continuously records the Redis queue depth while the worker is active."""
+async def monitor_queue_depth(mock_redis, client: httpx.AsyncClient, interval=0.1):
+    """Continuously records the Redis queue depth and health endpoint status."""
     depths = []
+    health_statuses = set()
     while worker_service.is_running:
-        depths.append(mock_redis.llen(WEBHOOK_QUEUE_NAME))
+        try:
+            depths.append(mock_redis.llen(WEBHOOK_QUEUE_NAME))
+        except Exception:
+            depths.append(0)
+            
+        try:
+            res = await client.get("/api/v1/health")
+            if res.status_code in [200, 503]:
+                data = res.json()
+                if "status" in data:
+                    health_statuses.add(data["status"])
+        except Exception:
+            pass
+            
         await asyncio.sleep(interval)
-    return depths
+        
+    return depths, health_statuses
 
 def generate_mock_json_response(*args, **kwargs):
     """Dynamically reads the AI prompt and explicitly returns parsed schemas for ANY IDs found."""
@@ -166,21 +167,24 @@ async def test_webhook_burst_ingestion(db_session, mock_redis):
              patch('app.workers.job_handler.SessionLocal', TestingSessionLocal), \
              patch('app.workers.worker_service.get_redis_client', return_value=mock_redis), \
              patch("app.ai.gemini_client.GeminiClient.generate_content_async", new_callable=AsyncMock, side_effect=mock_gemini_generate_async, create=True), \
-             patch("app.ai.gemini_client.GeminiClient.generate_content", side_effect=mock_gemini_generate_sync, create=True):
+             patch("app.ai.gemini_client.GeminiClient.generate_content", side_effect=mock_gemini_generate_sync, create=True), \
+             patch('app.api.health.QUEUE_DEGRADED_THRESHOLD', 15), \
+             patch('app.api.health.QUEUE_CRITICAL_THRESHOLD', 35), \
+             patch('app.api.webhook.verify_whatsapp_signature', return_value=True):
             
-            # 1. Start the queue monitor
-            monitor_task = asyncio.create_task(monitor_queue_depth(mock_redis, 0.2))
-            
-            # 2. Spawn the worker loop in a separate thread so it doesn't block the async event loop
-            worker_task = asyncio.create_task(asyncio.to_thread(worker_service.start_worker))
-
-            # 3. Fire the burst ingestion
-            sem = asyncio.Semaphore(2)  # Strict limit to guarantee NO QueuePool timeouts
-            async def bounded_post(req_client, content, headers):
-                async with sem:
-                    return await req_client.post("/api/v1/webhook", content=content, headers=headers)
-
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+                # 1. Start the queue monitor
+                monitor_task = asyncio.create_task(monitor_queue_depth(mock_redis, client, 0.1))
+                
+                # 2. Spawn the worker loop in a separate thread so it doesn't block the async event loop
+                worker_task = asyncio.create_task(asyncio.to_thread(worker_service.start_worker))
+
+                # 3. Fire the burst ingestion
+                sem = asyncio.Semaphore(2)  # Strict limit to guarantee NO QueuePool timeouts
+                async def bounded_post(req_client, content, headers):
+                    async with sem:
+                        return await req_client.post("/api/v1/webhook", content=content, headers=headers)
+
                 tasks = []
                 for i in range(total_requests):
                     payload_bytes = create_payload(i, run_id)
@@ -214,7 +218,7 @@ async def test_webhook_burst_ingestion(db_session, mock_redis):
         app.dependency_overrides.clear()
         worker_service.is_running = False
         await worker_task
-        queue_depths = await monitor_task
+        queue_depths, health_statuses = await monitor_task
 
     # System Stability Assertions
     successes = [res for res in responses if res.status_code == 200]
@@ -222,6 +226,12 @@ async def test_webhook_burst_ingestion(db_session, mock_redis):
 
     # Queue Dynamics Assertions
     max_depth = max(queue_depths) if queue_depths else 0
+    
+    # Health Endpoint Dynamic Transition Verification
+    if health_statuses and max_depth >= 15:
+        non_healthy_states = {"degraded", "unhealthy"}
+        assert len(non_healthy_states.intersection(health_statuses)) > 0, "Health endpoint missed the queue buildup."
+        
     logger.info(f"Burst duration: {burst_end - burst_start:.2f}s | Max Queue Depth observed: {max_depth}")
     assert mock_redis.llen(WEBHOOK_QUEUE_NAME) == 0, "Queue did not drain completely."
 
@@ -437,7 +447,8 @@ async def test_sustained_stress_and_recovery(db_session, mock_redis):
              patch('app.workers.job_handler.SessionLocal', TestingSessionLocal), \
              patch('app.workers.worker_service.get_redis_client', return_value=mock_redis), \
              patch("app.ai.gemini_client.GeminiClient.generate_content_async", new_callable=AsyncMock, side_effect=mock_gemini_generate_async, create=True), \
-             patch("app.ai.gemini_client.GeminiClient.generate_content", side_effect=mock_gemini_generate_sync, create=True):
+             patch("app.ai.gemini_client.GeminiClient.generate_content", side_effect=mock_gemini_generate_sync, create=True), \
+             patch('app.api.webhook.verify_whatsapp_signature', return_value=True):
 
             # Spawn worker in the background
             worker_task = asyncio.create_task(asyncio.to_thread(worker_service.start_worker))

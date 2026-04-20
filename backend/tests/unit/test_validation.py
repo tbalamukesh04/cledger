@@ -8,12 +8,14 @@ from app.models.raw_messages import RawMessages
 
 import pytest
 
+import uuid
 def test_database_validation_constraints():
     db = SessionLocal()
+    run_id = uuid.uuid4().hex[:8]
 
     try:
-        test_group = Groups(group_id="whatsapp_group_999", groupname="Validation Squad")
-        test_participant = Participants(phone="9998887776", displayname="Validator User")
+        test_group = Groups(group_id=f"grp_{run_id}", groupname="Validation Squad")
+        test_participant = Participants(phone=f"999{run_id}", displayname="Validator User")
         
         db.add(test_group)
         db.add(test_participant)
@@ -22,11 +24,11 @@ def test_database_validation_constraints():
         test_message = RawMessages(
             group_id=test_group.id,
             sender_id=test_participant.id,
-            message_id="wamid.VALIDATION_MSG_001",
+            message_id=f"wamid.VAL_{run_id}",
             received_at=datetime.now(timezone.utc),
             raw_json={"test": "payload"},
             raw_text="This is a validation test message.",
-            hash="hash_validation_001"
+            hash=f"hash_1_{run_id}"
         )
         db.add(test_message)
         db.commit()
@@ -34,10 +36,10 @@ def test_database_validation_constraints():
         duplicate_message = RawMessages(
             group_id=test_group.id,
             sender_id=test_participant.id,
-            message_id="wamid.VALIDATION_MSG_001", 
+            message_id=f"wamid.VAL_{run_id}", 
             received_at=datetime.now(timezone.utc),
             raw_json={"test": "payload_duplicate"},
-            hash="hash_validation_002"
+            hash=f"hash_2_{run_id}"
         )
         db.add(duplicate_message)
         
