@@ -72,9 +72,9 @@ def health_check(
         disk_percent = (usage.used / usage.total) * 100.0
         checks['disk_usage_percent'] = round(disk_percent, 2)
 
-        if disk_percent >= DISK_CRITICAL_THRESHOLD:
+        if disk_percent >= (DISK_CRITICAL_THRESHOLD * 100):
             checks['disk'] = 'unhealthy'
-        elif disk_percent >= DISK_DEGRADED_THRESHOLD:
+        elif disk_percent >= (DISK_DEGRADED_THRESHOLD * 100):
             checks['disk'] = 'degraded'
         else:
             checks['disk'] = 'ok'
