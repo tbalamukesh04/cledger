@@ -72,12 +72,16 @@ function Setup-NSSMService {
 # STEP 2: REGISTER BACKEND SERVICE
 # ==========================================
 # Note: Gunicorn is Unix-only. Using Uvicorn's built-in multiprocessing for Windows.
-$backendArgs = "-m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2 --timeout-keep-alive 120"
+$backendArgs = "-m uvicorn app.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120"
 Setup-NSSMService -ServiceName $backendServiceName -ExePath $pythonExe -AppParams $backendArgs -AppDir $backendDir
 
 # Route crash logs to file for visibility
-& $nssmPath set $backendServiceName AppStdout "$backendDir\backend_service.log"
-& $nssmPath set $backendServiceName AppStderr "$backendDir\backend_service_error.log"
+& $nssmPath set $backendServiceName AppStdout "C:\Projects\cledger\logs\backend.out.log"
+& $nssmPath set $backendServiceName AppStderr "C:\Projects\cledger\logs\backend.err.log"
+# Enable NSSM native daily rotation (86400 seconds)
+& $nssmPath set $backendServiceName AppRotateFiles 1
+& $nssmPath set $backendServiceName AppRotateOnline 1
+& $nssmPath set $backendServiceName AppRotateSeconds 86400
 
 # ==========================================
 # STEP 3: REGISTER WORKER SERVICE
@@ -86,9 +90,12 @@ $workerArgs = "-m app.workers.worker_service"
 Setup-NSSMService -ServiceName $workerServiceName -ExePath $pythonExe -AppParams $workerArgs -AppDir $backendDir
 
 # Route crash logs to file for visibility
-& $nssmPath set $workerServiceName AppStdout "$backendDir\worker_service.log"
-& $nssmPath set $workerServiceName AppStderr "$backendDir\worker_service_error.log"
-
+& $nssmPath set $workerServiceName AppStdout "C:\Projects\cledger\logs\worker.out.log"
+& $nssmPath set $workerServiceName AppStderr "C:\Projects\cledger\logs\worker.err.log"
+# Enable NSSM native daily rotation (86400 seconds)
+& $nssmPath set $workerServiceName AppRotateFiles 1
+& $nssmPath set $workerServiceName AppRotateOnline 1
+& $nssmPath set $workerServiceName AppRotateSeconds 86400
 # ==========================================
 # STEP 4: START SERVICES
 # ==========================================

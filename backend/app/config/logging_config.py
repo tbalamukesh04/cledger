@@ -3,7 +3,7 @@ import json
 import sys
 import os
 import contextvars
-from logging.handlers import WatchedFileHandler
+from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime, timezone
 from app.config.pii_policy import apply_field_redaction, redact_unstructured_text
 
@@ -93,22 +93,22 @@ def setup_logging():
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
-    log_dir_primary = '/var/log/app'
-    log_file_primary = f"{log_dir_primary}/app.log"
+    log_dir_primary = r'C:\Projects\cledger\logs'
+    log_file_primary = os.path.join(log_dir_primary, 'app.log')
     log_dir_fallback = os.path.join(os.getcwd(), "logs")
     log_file_fallback = os.path.join(log_dir_fallback, "app.log")
 
     file_handler = None
     try:
         os.makedirs(log_dir_primary, exist_ok=True)
-        file_handler = WatchedFileHandler(
-            log_file_primary, encoding="utf-8"
+        file_handler = TimedRotatingFileHandler(
+            log_file_primary, when="midnight", interval=1, backupCount=7, encoding="utf-8"
         )
     
     except (PermissionError, OSError):
         os.makedirs(log_dir_fallback, exist_ok=True)
-        file_handler = WatchedFileHandler(
-            log_file_fallback, encoding="utf-8"
+        file_handler = TimedRotatingFileHandler(
+            log_file_fallback, when="midnight", interval=1, backupCount=7, encoding="utf-8"
         )
     
     if file_handler:
