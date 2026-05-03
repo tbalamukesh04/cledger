@@ -141,7 +141,7 @@ async def test_webhook_burst_ingestion(db_session, mock_redis):
                 if isinstance(dep.dependency, RateLimiter) or isinstance(dep.dependency, IPFilter):
                     app.dependency_overrides[dep.dependency] = mock_dependency
 
-    total_requests = 50  # Scaled down to prevent local SQLite/Postgres overwhelm
+    total_requests = 250  # Scaled down to prevent local SQLite/Postgres overwhelm
     run_id = str(int(time.time()))
     
     # Reset worker flag in case of dirty state from previous tests

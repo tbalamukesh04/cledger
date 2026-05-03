@@ -15,7 +15,7 @@ from app.schemas.jobs import WebhookJobPayload
 from app.workers.job_handler import process_webhook_batch, RETRYABLE_EXCEPTIONS
 from app.config.logging_config import setup_logging
 from app.utils.backoff import apply_exponential_backoff
-from app.ai.config import AI_BATCH_SIZE, AI_BATCH_TIMEOUT_SECONDS
+from app.ai.config import WORKER_BATCH_SIZE, AI_BATCH_TIMEOUT_SECONDS
 from app.utils.logger import log_event, log_error, bind_context
 from app.core.log_events import LogEvent
 
@@ -57,7 +57,8 @@ def start_worker():
             break
         log_event(LogEvent.SYSTEM_ERROR, "Orphaned job safely returned to main queue", status="recovered")
     
-    log_event(LogEvent.WORKER_STARTUP, "Worker listening for jobs", batch_size=AI_BATCH_SIZE)
+    log_event(LogEvent.WORKER_STARTUP, "Worker listening for jobs", batch_size=WORKER_BATCH_SIZE)
+
 
     last_queue_log_time = time.time()
     QUEUE_LOG_INTERVAL_SECONDS = 60
@@ -75,7 +76,7 @@ def start_worker():
             start_time = time.time()
 
             # 1. Gather Batch loop
-            while len(batch_payloads) < AI_BATCH_SIZE and is_running:
+            while len(batch_payloads) < WORKER_BATCH_SIZE and is_running:
                 # Use a short 1-second timeout so we can respect the overall BATCH_TIMEOUT
                 payload_str = redis_client.brpoplpush(WEBHOOK_QUEUE_NAME, WEBHOOK_ACTIVE_QUEUE, timeout=1)
                 
