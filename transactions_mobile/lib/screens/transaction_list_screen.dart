@@ -37,7 +37,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     
     // Temporarily inject the test token to resolve the 401 Unauthorized error.
     // TODO: Replace with dynamic token retrieval from secure storage in future steps.
-    const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc3NDkzMzA1NH0.1nl3qEBDLnP-uWjueI_itLcRbvuxb_ZKCzXs7ShuTaQ";
+    const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTgwOTUwOTgyOX0.NnbwMPmiDl1SXSUehEmbN5R-dz3_0PjjaU0v0ekJn4U";
     apiService.client.options.headers['Authorization'] = 'Bearer $testToken';
 
     final apiClient = ApiClient(apiService.client);
