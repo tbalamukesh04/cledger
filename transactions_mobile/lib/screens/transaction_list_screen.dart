@@ -342,13 +342,24 @@ Future<void> _exportCsv() async {
                             ? "${txn.txnDate!.year}-${txn.txnDate!.month.toString().padLeft(2, '0')}-${txn.txnDate!.day.toString().padLeft(2, '0')}"
                             : "Unknown Date";
                         final status = txn.status ?? 'Unknown';
+                        final isPending = txn.syncState == 'pending_local';
 
                         return Card(
                           margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                           child: ListTile(
-                            title: Text(
-                              participantName,
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            title: Row(
+                              children: [
+                                if (isPending) const Padding(
+                                  padding: EdgeInsets.only(right: 6.0),
+                                  child: Icon(Icons.cloud_off, color: Colors.orange, size: 18),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    participantName,
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
                             ),
                             subtitle: Text('$dateStr\nStatus: $status'),
                             isThreeLine: true,

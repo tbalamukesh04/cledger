@@ -80,17 +80,14 @@ class _TransactionEditScreenState extends State<TransactionEditScreen> {
     try {
       final safeAmountText = _amountController.text.replaceAll(',', '.');
       
-      final newJson = {
-        'amount': double.tryParse(safeAmountText),
-        'currency': _currencyController.text.trim().toUpperCase(),
-        'remarks': _remarksController.text.trim(),
-        'counterparty': _counterpartyController.text.trim(),
-        'txn_type': _transactionType,
-        'txn_date': _selectedDate?.toIso8601String() ?? DateTime.now().toIso8601String(),
-      };
-
-      final newTxn = Transaction.fromJson(newJson);
-      final savedTxn = await _repository.createTransaction(newTxn);
+      final savedTxn = await _repository.createTransaction(
+        amount: double.tryParse(safeAmountText) ?? 0.0,
+        currency: _currencyController.text.trim().toUpperCase(),
+        description: _remarksController.text.trim(),
+        date: _selectedDate ?? DateTime.now(),
+        transactionType: _transactionType,
+        counterparty: _counterpartyController.text.trim(),
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -165,9 +162,22 @@ class _TransactionEditScreenState extends State<TransactionEditScreen> {
     } catch (e) {
       print("🔴 API Call Failed: $e");
       if (mounted) {
+        final isOfflineSuccess = e.toString().contains('Network failed, but your changes are saved locally');
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Update failed. Reverted to previous state: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(isOfflineSuccess ? 'Offline: Changes saved locally.' : 'Update failed: $e'), 
+            backgroundColor: isOfflineSuccess ? Colors.orange : Colors.red
+          ),
         );
+
+        if (isOfflineSuccess && widget.transaction != null) {
+          final localTxn = _repository.getCachedTransactions().firstWhere(
+            (t) => t.id == widget.transaction!.id, 
+            orElse: () => widget.transaction!
+          );
+          Navigator.pop(context, localTxn);
+        }
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

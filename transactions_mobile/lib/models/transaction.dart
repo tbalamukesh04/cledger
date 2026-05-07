@@ -32,6 +32,8 @@ class Transaction {
   final Participant? participant;
   @HiveField(11)
   final MessageMetadata? messageMetadata;
+  @HiveField(12, defaultValue: 'synced')
+  final String syncState;
 
   Transaction({
     required this.id,
@@ -46,6 +48,7 @@ class Transaction {
     this.updatedAt,
     this.participant,
     this.messageMetadata,
+    this.syncState = 'synced',
   });
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
@@ -78,6 +81,7 @@ class Transaction {
       messageMetadata: json['message_metadata'] != null 
           ? MessageMetadata.fromJson(json['message_metadata'] as Map<String, dynamic>) 
           : null,
+      syncState: json['sync_state']?.toString() ?? 'synced',
     );
   }
 
@@ -96,6 +100,7 @@ class Transaction {
       // Nested Serialization
       'participant': participant?.toJson(),
       'message_metadata': messageMetadata?.toJson(),
+      'sync_state': syncState,
     };
   }
 }

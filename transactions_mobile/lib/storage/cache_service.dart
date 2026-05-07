@@ -35,4 +35,12 @@ class CacheService {
   Future<void> clearTransactions() async {
     await _box.clear();
   }
+
+  Future<void> saveTransactionDetail(int id, Transaction data) async {
+    await _box.put(id, data);
+  }
+
+  Transaction? getTransactionDetail(int id) {
+    return _box.get(id);
+  }
 }

@@ -157,6 +157,17 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                             ? Colors.green.shade100 
                             : Colors.orange.shade100,
                       ),
+                      if (_transaction.syncState == 'pending_local') ...[
+                        const SizedBox(height: 8),
+                        const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.cloud_off, size: 16, color: Colors.orange),
+                            SizedBox(width: 4),
+                            Text('Pending Sync', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
