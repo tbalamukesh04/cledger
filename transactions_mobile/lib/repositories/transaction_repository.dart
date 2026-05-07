@@ -56,29 +56,34 @@ class TransactionRepository {
     print("--> [Repository] Executing background sync from API...");
     final serverTransactions = await apiClient.getTransactions(limit: limit, offset: offset);
         
-    // Conflict Resolution: Prefer server truth for synced items, preserve pending_local
     final existingCache = cacheService.getTransactions();
     final pendingLocalTxns = existingCache.where((t) => t.syncState == 'pending_local').toList();
     
+    // Deduplicate by ID
     final Map<int, Transaction> serverMap = {
       for (var t in serverTransactions) t.id: t
     };
     
-    // Apply pending offline edits directly to server map
+    // Merge with local pending_local items (preserve them)
     for (var pending in pendingLocalTxns) {
       if (serverMap.containsKey(pending.id)) {
         serverMap[pending.id] = pending;
       }
     }
     
-    // Build final list: Unsynced local creations FIRST, then server truth
+    // Maintain ordering: pending_local items pinned on top
     final List<Transaction> finalList = [];
     final localCreations = pendingLocalTxns.where((t) => !serverMap.containsKey(t.id)).toList();
     
+    final serverValues = serverMap.values.toList();
+    final serverPendingEdits = serverValues.where((t) => t.syncState == 'pending_local').toList();
+    final serverSynced = serverValues.where((t) => t.syncState != 'pending_local').toList();
+    
     finalList.addAll(localCreations);
-    finalList.addAll(serverMap.values);
+    finalList.addAll(serverPendingEdits);
+    finalList.addAll(serverSynced);
         
-    // Save merged data to local cache overriding old entries
+    // Save merged data to local cache
     await cacheService.saveTransactions(finalList);
     
     return finalList;

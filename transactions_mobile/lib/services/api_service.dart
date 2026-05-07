@@ -13,6 +13,49 @@ class ApiException implements Exception {
   String toString() => 'ApiException [$statusCode]: $message';
 }
 
+class RetryInterceptor extends Interceptor {
+  final Dio dio;
+
+  RetryInterceptor({required this.dio});
+
+  @override
+  Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
+    if (err.response != null && err.response!.statusCode != null && 
+        err.response!.statusCode! >= 400 && err.response!.statusCode! < 500) {
+      return super.onError(err, handler);
+    }
+
+    final options = err.requestOptions;
+    final isGet = options.method.toUpperCase() == 'GET';
+    final isReview = options.method.toUpperCase() == 'POST' && options.path.endsWith('/review');
+
+    if (!isGet && !isReview) {
+      return super.onError(err, handler);
+    }
+
+    int retryCount = options.extra['retryCount'] ?? 0;
+    
+    if (retryCount >= 2) {
+      return super.onError(err, handler);
+    }
+
+    options.extra['retryCount'] = retryCount + 1;
+    final backoffMs = retryCount == 0 ? 500 : 1000;
+    
+    await Future.delayed(Duration(milliseconds: backoffMs));
+
+    try {
+      final response = await dio.fetch(options);
+      return handler.resolve(response);
+    } catch (e) {
+      if (e is DioException) {
+        return handler.next(e);
+      }
+      return handler.next(err);
+    }
+  }
+}
+
 class ApiService {
   late final Dio _dio;
   String? _authToken; // Centrally holds the JWT token
@@ -39,6 +82,8 @@ class ApiService {
         return handler.next(options);
       },
     ));
+
+    _dio.interceptors.add(RetryInterceptor(dio: _dio));
   }
 
   /// Update the active authentication token
