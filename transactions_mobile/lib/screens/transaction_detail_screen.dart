@@ -31,8 +31,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     // 2. Setup repository to fetch fresh data
     final apiService = ApiService();
     const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTgwOTUwOTgyOX0.NnbwMPmiDl1SXSUehEmbN5R-dz3_0PjjaU0v0ekJn4U";
-    apiService.client.options.headers['Authorization'] = 'Bearer $testToken';
-    final apiClient = ApiClient(apiService.client);
+    
+    apiService.setAuthToken(testToken);
+    final apiClient = ApiClient(apiService);
     repository = TransactionRepository(apiClient: apiClient);
 
     // 3. Optionally fetch latest data in the background on load
@@ -170,6 +171,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      _buildDetailRow('Type', (_transaction.toJson()['txn_type']?.toString().toUpperCase()) ?? 'DEBIT'),
+                      const Divider(),
+                      _buildDetailRow('Counterparty', (_transaction.toJson()['counterparty']?.toString()) ?? 'N/A'),
+                      const Divider(),
                       _buildDetailRow('Txn Date', _formatDate(_transaction.txnDate)),
                       const Divider(),
                       _buildDetailRow('Created At', _formatDate(_transaction.createdAt)),

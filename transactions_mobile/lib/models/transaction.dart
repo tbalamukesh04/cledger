@@ -50,8 +50,9 @@ class Transaction {
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
     return Transaction(
-      id: json['id'] as int,
-      rawMessageId: json['raw_message_id'] as int?,
+      // Harden integer parsing to prevent "type 'String' is not a subtype of type 'int'" cast errors
+      id: json['id'] != null ? int.tryParse(json['id'].toString()) ?? 0 : 0,
+      rawMessageId: json['raw_message_id'] != null ? int.tryParse(json['raw_message_id'].toString()) : null,
       amount: json['amount'] != null ? double.tryParse(json['amount'].toString()) : null,
       currency: json['currency'] as String?,
       remarks: json['remarks'] as String?,

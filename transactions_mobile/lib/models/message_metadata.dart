@@ -17,9 +17,13 @@ class MessageMetadata {
     });
 
     factory MessageMetadata.fromJson(Map<String, dynamic> json) {
+        // Fail-fast validation: message_id is strictly required
+        if (json['message_id'] == null) {
+          throw const FormatException('Missing required field: message_id');
+        }
+
         return MessageMetadata(
-            // Use ?? to provide a safe fallback if id is null
-            id: json['message_id'] != null ? int.parse(json['message_id'].toString()) : 0,
+            id: int.tryParse(json['message_id'].toString()) ?? 0, 
             // Provide a safe fallback string if raw_text is missing
             text: json['raw_text']?.toString() ?? 'No text available',
             timestamp: json['received_at'] != null 

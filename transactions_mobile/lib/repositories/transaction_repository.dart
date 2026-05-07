@@ -16,11 +16,8 @@ class TransactionRepository {
   Future<List<Transaction>> fetchTransactions({int limit = 50, int offset = 0}) async {
     try {
       print("--> [Repository] Fetching MORE transactions from API (limit: $limit, offset: $offset)...");
-      final rawList = await apiClient.getTransactions(limit: limit, offset: offset);
-
-      final transactions = rawList
-          .map((json) => Transaction.fromJson(json as Map<String, dynamic>))
-          .toList();
+      // ApiClient now handles parsing and schema validation internally
+      final transactions = await apiClient.getTransactions(limit: limit, offset: offset);
           
       // Merge paginated data into the local cache rather than overwriting
       if (transactions.isNotEmpty) {
@@ -52,11 +49,7 @@ class TransactionRepository {
   /// Dedicated sync method: Fetches fresh data from API and instantly updates the cache
   Future<List<Transaction>> syncTransactions({int limit = 50, int offset = 0}) async {
     print("--> [Repository] Executing background sync from API...");
-    final rawList = await apiClient.getTransactions(limit: limit, offset: offset);
-
-    final transactions = rawList
-        .map((json) => Transaction.fromJson(json as Map<String, dynamic>))
-        .toList();
+    final transactions = await apiClient.getTransactions(limit: limit, offset: offset);
         
     // Save fresh data to local cache overriding old entries
     await cacheService.saveTransactions(transactions);
@@ -65,11 +58,8 @@ class TransactionRepository {
   }
 
   Future<Transaction> fetchTransaction(int id) async {
-    final rawData = await apiClient.getTransaction(id.toString());
-
-    final Map<String, dynamic> transactionData = rawData['transaction'] ?? rawData;
-
-    final transaction = Transaction.fromJson(transactionData);
+    // ApiClient now handles parsing and schema validation internally
+    final transaction = await apiClient.getTransactionById(id.toString());
     
     // Sync this individual transaction into the local cache
     try {
@@ -99,12 +89,94 @@ class TransactionRepository {
       payload['reason'] = reason.trim();
     }
 
-    print("--> [Repository] Executing POST request...");
+    // 1. Optimistic Update (Update local cache instantly)
+    final existingCache = cacheService.getTransactions();
+    final index = existingCache.indexWhere((t) => t.id == id);
+    Transaction? backupTxn;
     
-    await apiClient.reviewTransaction(id.toString(), payload);
+    if (index != -1) {
+      backupTxn = existingCache[index];
+      try {
+        final jsonMap = backupTxn.toJson();
+        
+        if (action == 'correct') {
+          jsonMap['status'] = 'CORRECTED';
+          if (correctedFields != null) {
+            correctedFields.forEach((key, value) {
+              jsonMap[key] = value;
+            });
+          }
+        } else if (action == 'invalidate') {
+          jsonMap['status'] = 'INVALIDATED';
+          if (reason != null && reason.trim().isNotEmpty) {
+            final oldRemarks = jsonMap['remarks'] ?? '';
+            jsonMap['remarks'] = oldRemarks.toString().isEmpty ? reason.trim() : '$oldRemarks | Invalidation Reason: ${reason.trim()}';
+          }
+        }
+        
+        final optimisticTxn = Transaction.fromJson(jsonMap);
+        existingCache[index] = optimisticTxn;
+        await cacheService.saveTransactions(existingCache);
+        print("--> [Repository] Optimistic cache update applied for $action.");
+      } catch (e) {
+        print("--> [Repository] Failed to apply optimistic update: $e");
+      }
+    }
+
+    // 2. Network Request
+    try {
+      print("--> [Repository] Executing POST request...");
+      await apiClient.reviewTransaction(id.toString(), payload);
+      print("--> [Repository] POST successful! Fetching fresh data via GET...");
+      
+      // Fetching the fresh transaction will auto-sync with the cache inside fetchTransaction()
+      return await fetchTransaction(id);
+    } catch (e) {
+      // 3. Rollback on Failure
+      print("--> [Repository] Network request failed! Rolling back optimistic update...");
+      if (backupTxn != null) {
+        final revertCache = cacheService.getTransactions();
+        final revertIndex = revertCache.indexWhere((t) => t.id == id);
+        if (revertIndex != -1) {
+          revertCache[revertIndex] = backupTxn;
+          await cacheService.saveTransactions(revertCache);
+        }
+      }
+      rethrow; // Rethrow to surface the error in the UI (e.g., Snackbar)
+    }
+  }
+
+  /// Local-only create flow: collects input, stores in local cache,
+  /// marks as pending_local. No API call made in this phase.
+  Future<Transaction> createTransaction(Transaction transaction) async {
+    print("--> [Repository] Creating local-only transaction...");
     
-    print("--> [Repository] POST successful! Fetching fresh data via GET...");
+    final existingCache = cacheService.getTransactions();
     
-    return fetchTransaction(id);
+    try {
+      final jsonMap = transaction.toJson();
+      
+      // Assign a temporary negative local ID to avoid collisions with real DB IDs
+      if (jsonMap['id'] == null || jsonMap['id'] == 0) {
+        jsonMap['id'] = -DateTime.now().millisecondsSinceEpoch; 
+      }
+      
+      // Force status to identify as a locally created offline item
+      jsonMap['status'] = 'PENDING_LOCAL';
+      
+      final localTxn = Transaction.fromJson(jsonMap);
+      
+      // Insert at the top of the cache list
+      existingCache.insert(0, localTxn);
+      await cacheService.saveTransactions(existingCache);
+      
+      print("--> [Repository] Local transaction saved to cache with ID: ${localTxn.id}");
+      return localTxn;
+      
+    } catch (e) {
+      print("--> [Repository] Critical error during local creation: $e");
+      // Ensure the error bubbles up so the UI can show the SnackBar
+      rethrow; 
+    }
   }
 }

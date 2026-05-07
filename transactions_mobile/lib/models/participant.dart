@@ -16,9 +16,13 @@ class Participant {
     });
 
     factory Participant.fromJson(Map<String, dynamic> json) {
+        // Fail-fast validation: id is strictly required
+        if (json['id'] == null) {
+          throw const FormatException('Missing required field: id');
+        }
+
         return Participant(
-            // Use ?? to provide a safe fallback if id is null
-            id: json['id'] != null ? int.parse(json['id'].toString()) : 0, 
+            id: int.tryParse(json['id'].toString()) ?? 0, 
             name: json['displayname']?.toString(),
             // Provide a safe fallback string if phone is missing
             phone: json['phone']?.toString() ?? 'Unknown Phone',

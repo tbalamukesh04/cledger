@@ -5,6 +5,7 @@ import '../services/api_client.dart';
 import '../repositories/transaction_repository.dart';
 import '../services/csv_export_service.dart';
 import 'transaction_detail_screen.dart';
+import 'transaction_edit_screen.dart';
 
 class TransactionListScreen extends StatefulWidget {
   const TransactionListScreen({super.key});
@@ -23,6 +24,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   bool _hasMore = true;
   int _offset = 0;
   final int _limit = 50;
+  String? _errorMessage;
 
   final ScrollController _scrollController = ScrollController();
   late final TransactionRepository repository;
@@ -38,9 +40,11 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     // Temporarily inject the test token to resolve the 401 Unauthorized error.
     // TODO: Replace with dynamic token retrieval from secure storage in future steps.
     const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTgwOTUwOTgyOX0.NnbwMPmiDl1SXSUehEmbN5R-dz3_0PjjaU0v0ekJn4U";
-    apiService.client.options.headers['Authorization'] = 'Bearer $testToken';
+    // Utilize the new central auth method
+    apiService.setAuthToken(testToken);
 
-    final apiClient = ApiClient(apiService.client);
+    // Pass the ApiService directly
+    final apiClient = ApiClient(apiService);
     repository = TransactionRepository(apiClient: apiClient);
     _csvExportService = CsvExportService(apiClient);
 
@@ -62,6 +66,10 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   }
 
 Future<void> _fetchTransactions() async {
+    setState(() {
+      _errorMessage = null;
+    });
+
     // 1. Instantly load from cache to populate the UI immediately
     final cachedTransactions = repository.getCachedTransactions();
     if (cachedTransactions.isNotEmpty) {
@@ -106,13 +114,21 @@ Future<void> _fetchTransactions() async {
       }
     } catch (e) {
       // Fail silently, keep cached data
-      print("--> [UI] Background sync failed silently: $e");
+      print("--> [UI] Background sync failed: $e");
       
-      if (mounted && _transactions.isNotEmpty) {
-        // Show a subtle indicator that we are in offline mode
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Offline: Showing cached transactions')),
-        );
+      if (mounted) {
+        setState(() {
+          if (_transactions.isEmpty) {
+            _errorMessage = 'Failed to load transactions.\nPlease check your network connection.';
+          }
+        });
+
+        if (_transactions.isNotEmpty) {
+          // Show a subtle indicator that we are in offline mode
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Offline: Showing cached transactions')),
+          );
+        }
       }
     } finally {
       if (mounted) {
@@ -125,6 +141,10 @@ Future<void> _fetchTransactions() async {
 
   Future<void> _refreshTransactions() async {
     if (_isSyncing) return; // Prevent manual refresh if already syncing in background
+    
+    setState(() {
+      _errorMessage = null;
+    });
 
     try {
       // Use syncTransactions to ensure cache is updated on manual refresh
@@ -136,6 +156,7 @@ Future<void> _fetchTransactions() async {
           _transactions = results;
           _offset = results.length;
           _hasMore = results.length >= _limit;
+          _errorMessage = null;
         });
       }
     } catch (e) {
@@ -143,9 +164,17 @@ Future<void> _fetchTransactions() async {
       print("--> [UI] Manual refresh failed: $e");
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Offline: Cannot refresh right now. Showing cached data.')),
-        );
+        setState(() {
+          if (_transactions.isEmpty) {
+            _errorMessage = 'Failed to refresh transactions.\nPlease check your network connection.';
+          }
+        });
+        
+        if (_transactions.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Offline: Cannot refresh right now. Showing cached data.')),
+          );
+        }
       }
     }
   }
@@ -256,15 +285,37 @@ Future<void> _exportCsv() async {
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _refreshTransactions,
-              child: _transactions.isEmpty
+              child: _errorMessage != null && _transactions.isEmpty
                   ? ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      children: const [
-                        SizedBox(height: 200),
-                        Center(child: Text('No transactions found. Pull down to refresh.')),
+                      children: [
+                        const SizedBox(height: 150),
+                        const Icon(Icons.error_outline, size: 64, color: Colors.redAccent),
+                        const SizedBox(height: 16),
+                        Text(
+                          _errorMessage!, 
+                          textAlign: TextAlign.center, 
+                          style: const TextStyle(fontSize: 16, color: Colors.grey)
+                        ),
+                        const SizedBox(height: 24),
+                        Center(
+                          child: ElevatedButton.icon(
+                            onPressed: _fetchTransactions,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Retry'),
+                          ),
+                        ),
                       ],
                     )
-                  : ListView.builder(
+                  : _transactions.isEmpty
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: const [
+                            SizedBox(height: 200),
+                            Center(child: Text('No transactions found. Pull down to refresh.')),
+                          ],
+                        )
+                      : ListView.builder(
                       controller: _scrollController,
                       physics: const AlwaysScrollableScrollPhysics(),
                       itemCount: _transactions.length + (_isFetchingMore ? 1 : 0),
@@ -331,6 +382,30 @@ Future<void> _exportCsv() async {
                       },
                     ),
             ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          // Open TransactionEditScreen in Create Mode (transaction == null)
+          final newTxn = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const TransactionEditScreen(),
+            ),
+          );
+
+          // Optimistic UI Update: Instantly refresh the list from the local cache 
+          // to show the newly created PENDING_LOCAL transaction without a network request.
+          if (newTxn != null && mounted) {
+            final cached = repository.getCachedTransactions();
+            setState(() {
+              _transactions = cached;
+              _offset = cached.length;
+              _errorMessage = null;
+            });
+          }
+        },
+        tooltip: 'Add Transaction',
+        child: const Icon(Icons.add),
+      ),
     );
   }
 }
