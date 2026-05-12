@@ -6,6 +6,7 @@ import '../repositories/transaction_repository.dart';
 import '../services/csv_export_service.dart';
 import 'transaction_detail_screen.dart';
 import 'transaction_edit_screen.dart';
+import 'settings_screen.dart';
 
 class TransactionListScreen extends StatefulWidget {
   const TransactionListScreen({super.key});
@@ -273,12 +274,27 @@ Future<void> _exportCsv() async {
                 ),
               ),
             )
-          else
+          else ...[
             IconButton(
               icon: const Icon(Icons.download),
               onPressed: _exportCsv,
               tooltip: 'Export CSV',
             ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SettingsScreen(
+                      onRefreshRequested: _refreshTransactions,
+                    ),
+                  ),
+                );
+              },
+              tooltip: 'Settings',
+            ),
+          ],
         ],
       ),
       body: _isLoading && _transactions.isEmpty
