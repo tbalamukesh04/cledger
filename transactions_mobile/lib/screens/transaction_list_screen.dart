@@ -4,6 +4,9 @@ import '../services/api_service.dart';
 import '../services/api_client.dart';
 import '../repositories/transaction_repository.dart';
 import '../services/csv_export_service.dart';
+import '../widgets/loading_state.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/error_state.dart';
 import 'transaction_detail_screen.dart';
 import 'transaction_edit_screen.dart';
 import 'settings_screen.dart';
@@ -266,13 +269,7 @@ Future<void> _exportCsv() async {
           if (_isSyncing || _isExporting)
             const Padding(
               padding: EdgeInsets.all(16.0),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                ),
-              ),
+              child: CustomLoadingState.inline(),
             )
           else ...[
             IconButton(
@@ -297,118 +294,97 @@ Future<void> _exportCsv() async {
           ],
         ],
       ),
-      body: _isLoading && _transactions.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _refreshTransactions,
-              child: _errorMessage != null && _transactions.isEmpty
-                  ? ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      children: [
-                        const SizedBox(height: 150),
-                        const Icon(Icons.error_outline, size: 64, color: Colors.redAccent),
-                        const SizedBox(height: 16),
-                        Text(
-                          _errorMessage!, 
-                          textAlign: TextAlign.center, 
-                          style: const TextStyle(fontSize: 16, color: Colors.grey)
-                        ),
-                        const SizedBox(height: 24),
-                        Center(
-                          child: ElevatedButton.icon(
-                            onPressed: _fetchTransactions,
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('Retry'),
-                          ),
-                        ),
-                      ],
-                    )
-                  : _transactions.isEmpty
-                      ? ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          children: const [
-                            SizedBox(height: 200),
-                            Center(child: Text('No transactions found. Pull down to refresh.')),
-                          ],
-                        )
-                      : ListView.builder(
-                      controller: _scrollController,
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      itemCount: _transactions.length + (_isFetchingMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        // Display a loading indicator at the bottom if fetching more
-                        if (index == _transactions.length) {
-                          return const SafeArea(
-                            top: false,
-                            child: Padding(
-                                padding: EdgeInsets.all(16.0),
-                                child: Center(child: CircularProgressIndicator()),
-                            ),
-                          );
-                        }
+body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        child: _isLoading && _transactions.isEmpty
+            ? const CustomLoadingState.centered(message: 'Loading transactions...')
+            : RefreshIndicator(
+                onRefresh: _refreshTransactions,
+                child: _errorMessage != null && _transactions.isEmpty
+                    ? CustomErrorState(
+                        message: _errorMessage!,
+                        onRetry: _fetchTransactions,
+                      )
+                    : _transactions.isEmpty
+                        ? CustomEmptyState(
+                            title: 'No transactions found',
+                            message: 'Pull down to refresh or add a new transaction.',
+                            actionLabel: 'Refresh',
+                            onActionPressed: _refreshTransactions,
+                          )
+                        : ListView.builder(
+                            controller: _scrollController,
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            itemCount: _transactions.length + (_isFetchingMore ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              // Display a loading indicator at the bottom if fetching more
+                              if (index == _transactions.length) {
+                                return const CustomLoadingState.pagination();
+                              }
 
-                        final txn = _transactions[index];
-                        
-                        final currency = txn.currency ?? '';
-                        final amount = txn.amount?.toStringAsFixed(2) ?? '0.00';
-                        final participantName = txn.participant?.name ?? 
-                                                txn.participant?.phone ?? 
-                                                'Unknown Participant';
-                        final dateStr = txn.txnDate != null 
-                            ? "${txn.txnDate!.year}-${txn.txnDate!.month.toString().padLeft(2, '0')}-${txn.txnDate!.day.toString().padLeft(2, '0')}"
-                            : "Unknown Date";
-                        final status = txn.status ?? 'Unknown';
-                        final isPending = txn.syncState == 'pending_local';
+                              final txn = _transactions[index];
+                              
+                              final currency = txn.currency ?? '';
+                              final amount = txn.amount?.toStringAsFixed(2) ?? '0.00';
+                              final participantName = txn.participant?.name ?? 
+                                                      txn.participant?.phone ?? 
+                                                      'Unknown Participant';
+                              final dateStr = txn.txnDate != null 
+                                  ? "${txn.txnDate!.year}-${txn.txnDate!.month.toString().padLeft(2, '0')}-${txn.txnDate!.day.toString().padLeft(2, '0')}"
+                                  : "Unknown Date";
+                              final status = txn.status ?? 'Unknown';
+                              final isPending = txn.syncState == 'pending_local';
 
-                        return Card(
-                          margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                          child: ListTile(
-                            title: Row(
-                              children: [
-                                if (isPending) const Padding(
-                                  padding: EdgeInsets.only(right: 6.0),
-                                  child: Icon(Icons.cloud_off, color: Colors.orange, size: 18),
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    participantName,
-                                    style: const TextStyle(fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            subtitle: Text('$dateStr\nStatus: $status'),
-                            isThreeLine: true,
-                            trailing: Text(
-                              '$currency $amount'.trim(),
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            onTap: () async {
-                                await Navigator.push(
-                                    context, 
-                                    MaterialPageRoute(
-                                        builder: (context) => TransactionDetailScreen(
-                                            transaction: txn
+                              return Card(
+                                margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                                child: ListTile(
+                                  title: Row(
+                                    children: [
+                                      if (isPending) const Padding(
+                                        padding: EdgeInsets.only(right: 6.0),
+                                        child: Icon(Icons.cloud_off, color: Colors.orange, size: 18),
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          participantName,
+                                          style: const TextStyle(fontWeight: FontWeight.bold),
                                         ),
+                                      ),
+                                    ],
+                                  ),
+                                  subtitle: Text('$dateStr\nStatus: $status'),
+                                  isThreeLine: true,
+                                  trailing: Text(
+                                    '$currency $amount'.trim(),
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
                                     ),
-                                );
-                                final cached = repository.getCachedTransactions();
-                                final updatedIndex = cached.indexWhere((t) => t.id == txn.id);
-                                
-                                if (updatedIndex != -1 && mounted) {
-                                  setState(() {
-                                    _transactions[index] = cached[updatedIndex];
-                                  });
-                                }
+                                  ),
+                                  onTap: () async {
+                                      await Navigator.push(
+                                          context, 
+                                          MaterialPageRoute(
+                                              builder: (context) => TransactionDetailScreen(
+                                                  transaction: txn
+                                              ),
+                                          ),
+                                      );
+                                      final cached = repository.getCachedTransactions();
+                                      final updatedIndex = cached.indexWhere((t) => t.id == txn.id);
+                                      
+                                      if (updatedIndex != -1 && mounted) {
+                                        setState(() {
+                                          _transactions[index] = cached[updatedIndex];
+                                        });
+                                      }
+                                  },
+                                ),
+                              );
                             },
                           ),
-                        );
-                      },
-                    ),
-            ),
+              ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           // Open TransactionEditScreen in Create Mode (transaction == null)

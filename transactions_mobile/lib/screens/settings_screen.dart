@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../widgets/loading_state.dart';
 
 class SettingsScreen extends StatefulWidget {
   final Future<void> Function() onRefreshRequested;
@@ -56,14 +57,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Manual Refresh',
             subtitle: 'Trigger background synchronization',
             trailing: _isRefreshing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Color(0xFF0F9D88),
-                    ),
-                  )
+                ? const CustomLoadingState.inline()
                 : const Icon(Icons.chevron_right, color: Colors.grey),
             onTap: _isRefreshing
                 ? null
@@ -77,7 +71,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Transactions synchronized successfully.'),
-                            backgroundColor: Color(0xFF0F9D88),
                           ),
                         );
                       }
@@ -86,7 +79,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('Synchronization failed: $e'),
-                            backgroundColor: Colors.redAccent,
                           ),
                         );
                       }
@@ -184,10 +176,7 @@ class _SettingsCardTile extends StatelessWidget {
         subtitle: subtitle != null
             ? Text(
                 subtitle!,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey.shade600,
-                ),
+                style: Theme.of(context).textTheme.bodySmall,
               )
             : null,
         trailing: trailing,

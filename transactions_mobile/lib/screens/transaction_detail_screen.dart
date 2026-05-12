@@ -3,6 +3,7 @@ import '../models/transaction.dart';
 import '../services/api_service.dart';
 import '../services/api_client.dart';
 import '../repositories/transaction_repository.dart';
+import '../widgets/loading_state.dart';
 import 'transaction_edit_screen.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
@@ -98,11 +99,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             const Center(
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16.0),
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                ),
+                child: CustomLoadingState.inline(),
               ),
             ),
           IconButton(
@@ -140,11 +137,13 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   padding: const EdgeInsets.all(24.0),
                   child: Column(
                     children: [
-                      Text(
-                        '$currency $amount'.trim(),
-                        style: const TextStyle(
-                          fontSize: 36,
-                          fontWeight: FontWeight.bold,
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '$currency $amount'.trim(),
+                          style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -225,15 +224,13 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Row(
+                      Row(
                         children: [
-                          Icon(Icons.message_outlined, size: 18, color: Colors.grey),
-                          SizedBox(width: 8),
+                          Icon(Icons.message_outlined, size: 18, color: Theme.of(context).textTheme.bodySmall?.color),
+                          const SizedBox(width: 8),
                           Text(
                             'Raw Message Context',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -242,8 +239,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                       const SizedBox(height: 12),
                       Text(
                         messageText,
-                        style: const TextStyle(
-                          fontSize: 16,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           fontStyle: FontStyle.italic,
                           height: 1.4,
                         ),
@@ -283,6 +279,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
 
   // UI Helper for key-value rows
   Widget _buildDetailRow(String label, String value) {
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6.0),
       child: Row(
@@ -292,8 +289,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             width: 110,
             child: Text(
               label,
-              style: const TextStyle(
-                color: Colors.grey,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.textTheme.bodySmall?.color,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -301,9 +298,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
+              style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w500,
-                fontSize: 15,
               ),
             ),
           ),

@@ -3,6 +3,7 @@ import '../models/transaction.dart';
 import '../services/api_service.dart';
 import '../services/api_client.dart';
 import '../repositories/transaction_repository.dart';
+import '../widgets/loading_state.dart';
 
 enum ReviewAction { correct, invalidate }
 
@@ -91,18 +92,20 @@ class _TransactionEditScreenState extends State<TransactionEditScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Transaction created locally!'), backgroundColor: Colors.blue),
+          const SnackBar(content: Text('Transaction created locally!')),
         );
         Navigator.pop(context, savedTxn);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Local creation failed: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Local creation failed: $e')),
         );
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -155,7 +158,7 @@ class _TransactionEditScreenState extends State<TransactionEditScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Transaction updated successfully!'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('Transaction updated successfully!')),
         );
         Navigator.pop(context, updatedTransaction);
       }
@@ -166,8 +169,7 @@ class _TransactionEditScreenState extends State<TransactionEditScreen> {
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(isOfflineSuccess ? 'Offline: Changes saved locally.' : 'Update failed: $e'), 
-            backgroundColor: isOfflineSuccess ? Colors.orange : Colors.red
+            content: Text(isOfflineSuccess ? 'Offline: Changes saved locally.' : 'Update failed: $e'),
           ),
         );
 
@@ -180,7 +182,9 @@ class _TransactionEditScreenState extends State<TransactionEditScreen> {
         }
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -191,10 +195,10 @@ class _TransactionEditScreenState extends State<TransactionEditScreen> {
         title: Text(_isCreateMode ? 'Create Transaction' : 'Edit Transaction #${widget.transaction!.id}'),
       ),
       body: SafeArea(
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
+        child: Stack(
+          children: [
+            SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
                 child: Form(
                   key: _formKey,
                   child: Column(
@@ -303,49 +307,73 @@ class _TransactionEditScreenState extends State<TransactionEditScreen> {
                       // DYNAMIC ACTION BUTTONS
                       if (_isCreateMode)
                         ElevatedButton.icon(
-                          onPressed: _submitCreate,
+                          onPressed: _isLoading ? null : _submitCreate,
                           icon: const Icon(Icons.save),
                           label: const Text('Save Local Transaction'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            foregroundColor: Colors.white,
+                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                           ),
                         )
                       else
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () => _submitReview(ReviewAction.invalidate),
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final theme = Theme.of(context);
+                            final children = [
+                              OutlinedButton.icon(
+                                onPressed: _isLoading ? null : () => _submitReview(ReviewAction.invalidate),
                                 icon: const Icon(Icons.close),
                                 label: const Text('Invalidate'),
                                 style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.red,
-                                  side: const BorderSide(color: Colors.red),
+                                  foregroundColor: theme.colorScheme.error,
+                                  side: BorderSide(color: theme.colorScheme.error),
                                   padding: const EdgeInsets.symmetric(vertical: 16),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () => _submitReview(ReviewAction.correct),
+                              ElevatedButton.icon(
+                                onPressed: _isLoading ? null : () => _submitReview(ReviewAction.correct),
                                 icon: const Icon(Icons.check),
                                 label: const Text('Correct'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  foregroundColor: Colors.white,
+                                  backgroundColor: theme.colorScheme.primary,
+                                  foregroundColor: theme.colorScheme.onPrimary,
                                   padding: const EdgeInsets.symmetric(vertical: 16),
                                 ),
                               ),
-                            ),
-                          ],
+                            ];
+
+                            if (constraints.maxWidth < 340) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  children[1],
+                                  const SizedBox(height: 12),
+                                  children[0],
+                                ],
+                              );
+                            }
+
+                            return Row(
+                              children: [
+                                Expanded(child: children[0]),
+                                const SizedBox(width: 16),
+                                Expanded(child: children[1]),
+                              ],
+                            );
+                          },
                         ),
                     ],
                   ),
                 ),
+            ),
+            if (_isLoading)
+              Container(
+                color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.6),
+                child: const CustomLoadingState.centered(),
               ),
+          ],
+        ),
       ),
     );
   }
