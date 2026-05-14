@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import '../models/transaction.dart';
+import '../models/update_metadata.dart';
 import 'api_service.dart';
 
 class ApiClient {
@@ -57,7 +58,7 @@ class ApiClient {
     );
   }
 
-  /// Triggers a CSV export of the transactions.
+ /// Triggers a CSV export of the transactions.
   Future<void> exportTransactions(String savePath) async {
     try {
       // client.download is executed natively by Dio, skipping _request to handle 
@@ -84,5 +85,18 @@ class ApiClient {
         data: e.response?.data,
       );
     }
+  }
+
+  /// Fetches the application update metadata to verify client version constraints.
+  Future<UpdateMetadata> fetchLatestAppVersion() async {
+    final data = await _apiService.get('/api/v1/app/version');
+    
+    // Flatten any unnecessary wrapping payload structures safely
+    final Map<String, dynamic> metadataPayload = 
+        (data is Map<String, dynamic> && data.containsKey('metadata'))
+            ? data['metadata']
+            : data as Map<String, dynamic>;
+
+    return UpdateMetadata.fromJson(metadataPayload);
   }
 }
