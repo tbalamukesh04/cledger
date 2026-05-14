@@ -14,6 +14,7 @@ from app.api.export import router as export_router
 from app.api.transactions_admin import router as transactions_admin_router
 from app.api.transactions import router as transactions_router
 from app.api.metrics import router as metrics_router
+from app.api.version import router as version_router
 from app.middleware.correlation import CorrelationIdMiddleware
 from app.utils.logger import log_event, log_error, LogTimer
 from app.core.log_events import LogEvent
@@ -75,6 +76,7 @@ app.include_router(admin_router, prefix="/api/v1")
 app.include_router(export_router, prefix="/api/v1")
 app.include_router(transactions_admin_router, prefix="/api/v1")
 app.include_router(transactions_router, prefix="/api/v1")
+app.include_router(version_router, prefix="/api/v1")
 app.include_router(metrics_router)
 
 @app.get("/", tags=["Root"])
