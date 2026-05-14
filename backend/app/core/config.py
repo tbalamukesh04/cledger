@@ -17,7 +17,7 @@ class APISecurityConfig(BaseSettings):
     LATEST_BUILD_NUMBER: int = int(os.getenv("LATEST_BUILD_NUMBER", 1))
     MIN_REQUIRED_VERSION: str = os.getenv("MIN_REQUIRED_VERSION", "1.0.0")
     FORCE_UPDATE: bool = os.getenv("FORCE_UPDATE", "false").lower() in ("true", "1", "yes")
-    APK_DOWNLOAD_URL: str = os.getenv("APK_DOWNLOAD_URL", "https://api.cledger.com/downloads/app-release.apk")
+    APK_DOWNLOAD_URL: str = os.getenv("APK_DOWNLOAD_URL", "https://cledger.duckdns.org/downloads/app-release.apk")
     
     model_config = SettingsConfigDict(
         env_file = ".env",
