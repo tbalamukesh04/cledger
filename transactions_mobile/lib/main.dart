@@ -8,7 +8,7 @@ import 'models/message_metadata.dart';
 import 'services/api_service.dart';
 import 'services/api_client.dart';
 import 'services/version_service.dart';
-import 'widgets/update_prompt_dialog.dart';
+import 'services/update_prompt_dialog.dart';
 
 // Global navigation key enabling safe uncoupled context resolution from root wrappers
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();

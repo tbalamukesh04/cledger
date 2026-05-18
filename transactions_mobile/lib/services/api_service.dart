@@ -58,7 +58,7 @@ class RetryInterceptor extends Interceptor {
 
 class ApiService {
   late final Dio _dio;
-  String? _authToken; // Centrally holds the JWT token
+  static String? _authToken; // Upgraded to static to persist across instances
 
   ApiService() {
     _dio = Dio(BaseOptions(
@@ -71,11 +71,22 @@ class ApiService {
       },
     ));
 
-    // Standardize request execution: Attach JWT dynamically if available
-    // Note: Because this interceptor is on the base client, it successfully 
-    // patches the context loss bug seen in Day 54's dio.download() operations.
+    // Automated Dev Token Negotiation Interceptor
     _dio.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) {
+      onRequest: (options, handler) async {
+        // Negotiate token if missing, bypassing the token endpoint itself to prevent infinite loops
+        if (!options.path.endsWith('/dev-token') && (_authToken == null || _authToken!.isEmpty)) {
+          try {
+            print('--> [Auth] Negotiating development token...');
+            final tokenDio = Dio(BaseOptions(baseUrl: ApiConfig.baseUrl));
+            final tokenResponse = await tokenDio.get('/dev-token');
+            _authToken = tokenResponse.data['access_token'];
+            print('--> [Auth] Token injected successfully.');
+          } catch (e) {
+            print('--> [Auth] Token negotiation failed: $e');
+          }
+        }
+
         if (_authToken != null && _authToken!.isNotEmpty) {
           options.headers['Authorization'] = 'Bearer $_authToken';
         }
@@ -129,7 +140,7 @@ class ApiService {
     }
   }
 
-  /// Standardize success parsing by flattening backend pagination wrappers
+    /// success parsing by flattening backend pagination wrappers
   dynamic _normalizeResponse(dynamic data) {
     if (data is Map<String, dynamic>) {
       if (data.containsKey('transactions')) return data['transactions'];
