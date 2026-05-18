@@ -15,17 +15,35 @@ final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Hive.initFlutter();
-  
-  // Register Hive Adapters
-  Hive.registerAdapter(TransactionAdapter());
-  Hive.registerAdapter(ParticipantAdapter());
-  Hive.registerAdapter(MessageMetadataAdapter());
-  
-  // Open Hive Boxes
-  await Hive.openBox<Transaction>('transactions');
-  
-  runApp(const MyApp());
+  try {
+    await Hive.initFlutter();
+    
+    // Register Hive Adapters
+    Hive.registerAdapter(TransactionAdapter());
+    Hive.registerAdapter(ParticipantAdapter());
+    Hive.registerAdapter(MessageMetadataAdapter());
+    
+    // Open Hive Boxes
+    await Hive.openBox<Transaction>('transactions');
+    
+    runApp(const MyApp());
+  } catch (e, stackTrace) {
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'INIT FATAL ERROR:\n$e\n\nSTACKTRACE:\n$stackTrace',
+                style: const TextStyle(color: Colors.red, fontSize: 14),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class UpdatePromptInterceptor extends StatefulWidget {
