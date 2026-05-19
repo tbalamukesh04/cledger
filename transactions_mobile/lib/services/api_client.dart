@@ -68,6 +68,15 @@ class ApiClient {
         savePath,
       );
     } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout || 
+          e.type == DioExceptionType.receiveTimeout || 
+          e.type == DioExceptionType.connectionError) {
+        throw ApiException(
+          statusCode: 503,
+          message: 'Export failed: Device offline or backend unreachable.',
+        );
+      }
+
       final statusCode = e.response?.statusCode ?? 500;
       
       // Specifically handle the Phase 7 413 Payload Too Large boundary
