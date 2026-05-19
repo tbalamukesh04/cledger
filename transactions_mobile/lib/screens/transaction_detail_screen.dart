@@ -31,9 +31,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     
     // 2. Setup repository to fetch fresh data
     final apiService = ApiService();
-    const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTgwOTUwOTgyOX0.NnbwMPmiDl1SXSUehEmbN5R-dz3_0PjjaU0v0ekJn4U";
-    
-    apiService.setAuthToken(testToken);
     final apiClient = ApiClient(apiService);
     repository = TransactionRepository(apiClient: apiClient);
 

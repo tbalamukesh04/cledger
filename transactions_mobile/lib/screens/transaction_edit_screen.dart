@@ -41,13 +41,9 @@ class _TransactionEditScreenState extends State<TransactionEditScreen> {
     
     // Setup repository identically to the Detail Screen
     final apiService = ApiService();
-    // TODO: Replace with secure token retrieval in future phases
-    const testToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTgwOTUwOTgyOX0.NnbwMPmiDl1SXSUehEmbN5R-dz3_0PjjaU0v0ekJn4U";
-    
-    apiService.setAuthToken(testToken);
     final apiClient = ApiClient(apiService);
     _repository = TransactionRepository(apiClient: apiClient);
-
+    
     final txn = widget.transaction;
     final txnJson = txn?.toJson() ?? {}; // Use JSON serialization to safely access fields
     

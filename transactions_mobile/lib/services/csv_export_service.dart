@@ -11,7 +11,14 @@ class CsvExportService {
   /// Returns the absolute path to the saved CSV file.
   Future<String> exportAndSaveCsv() async {
     // 1. Get the OS-specific Downloads directory
-    Directory? directory = await getDownloadsDirectory();
+    Directory? directory;
+    
+    if (Platform.isAndroid) {
+      // Force native public Downloads folder on Android
+      directory = Directory('/storage/emulated/0/Download');
+    } else {
+      directory = await getDownloadsDirectory();
+    }
     
     // Fallback to Documents if Downloads isn't accessible on the current OS
     directory ??= await getApplicationDocumentsDirectory();

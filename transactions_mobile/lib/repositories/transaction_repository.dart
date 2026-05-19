@@ -165,8 +165,10 @@ class TransactionRepository {
       await apiClient.reviewTransaction(id.toString(), payload);
       print("--> [Repository] POST successful! Fetching fresh data via GET...");
       
-      // Sync fresh validated data into local cache (removes pending_local)
-      return await fetchTransaction(id);
+      // Bypass fetchTransaction conflict resolution to clear the pending_local lock
+      final freshTransaction = await apiClient.getTransactionById(id.toString());
+      await cacheService.saveTransactionDetail(id, freshTransaction);
+      return freshTransaction;
     } catch (e) {
       print("--> [Repository] Network fetch failed. Keeping optimistic update in cache: $e");
       // Keep optimistic update & throw to surface the error in UI SnackBar without rollback
