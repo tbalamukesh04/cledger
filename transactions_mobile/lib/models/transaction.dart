@@ -53,7 +53,8 @@ class Transaction {
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
     return Transaction(
-      // Harden integer parsing to prevent "type 'String' is not a subtype of type 'int'" cast errors
+      // Issue 88-H3 Fix: Enforce strict type-safe parsing across all numeric ID fields
+      // Handles silent type crashes when backend returns numeric strings instead of integers
       id: json['id'] != null ? int.tryParse(json['id'].toString()) ?? 0 : 0,
       rawMessageId: json['raw_message_id'] != null ? int.tryParse(json['raw_message_id'].toString()) : null,
       amount: json['amount'] != null ? double.tryParse(json['amount'].toString()) : null,

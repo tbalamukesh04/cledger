@@ -30,9 +30,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     _transaction = widget.transaction;
     
     // 2. Setup repository to fetch fresh data
-    final apiService = ApiService();
-    final apiClient = ApiClient(apiService);
-    repository = TransactionRepository(apiClient: apiClient);
+    // Issue 88-H1 / 88-H2 Fix: Prevent localized ApiService instantiation from overwriting the global JWT context.
+    // Use the global instance to retain standard auth interceptors.
+    repository = TransactionRepository(apiClient: ApiClient(ApiService.instance));
 
     // 3. Optionally fetch latest data in the background on load
     _fetchLatestTransaction();

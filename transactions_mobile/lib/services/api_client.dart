@@ -61,11 +61,16 @@ class ApiClient {
  /// Triggers a CSV export of the transactions.
   Future<void> exportTransactions(String savePath) async {
     try {
-      // client.download is executed natively by Dio, skipping _request to handle 
-      // the file stream, but it still automatically inherits the Auth Interceptor
+      // Download method natively bypasses standard request wrappers. 
+      // Explicitly inject the Authorization header to prevent Context Loss (Issue 88-H4).
+      final authHeader = _apiService.client.options.headers['Authorization'];
+      
       await _apiService.client.download(
         '/api/v1/transactions/export',
         savePath,
+        options: Options(
+          headers: authHeader != null ? {'Authorization': authHeader} : {},
+        ),
       );
     } on DioException catch (e) {
       if (e.type == DioExceptionType.connectionTimeout || 
