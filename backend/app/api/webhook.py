@@ -59,7 +59,8 @@ async def receive_webhook(
         raw_body = await request.body()
         signature = request.headers.get("x-hub-signature-256")
         
-        if client_ip != "127.0.0.1":
+        # Enforce cryptographic signature validation globally except in explicit local development
+        if os.getenv("ENVIRONMENT") != "development":
             if not signature:
                 log_event(LogEvent.SYSTEM_ERROR, "Missing signature header", level=logging.WARNING, reason="missing_signature_header", source_ip=client_ip, status="rejected")
                 raise HTTPException(status_code=403, detail="Missing signature header")
@@ -70,9 +71,15 @@ async def receive_webhook(
         
         try:
             body = json.loads(raw_body)
+            import json as _json
+            print("\n" + "="*50)
+            print("CAPTURED WEBHOOK PAYLOAD:")
+            print(_json.dumps(body, indent=2))
+            print("="*50 + "\n")
         except json.JSONDecodeError:
             log_event(LogEvent.SYSTEM_ERROR, "Malformed JSON Payload", level=logging.WARNING, reason="malformed_json", source_ip=client_ip, status="rejected")
             raise HTTPException(status_code=400, detail="Malformed JSON Payload")
+
         
         idem_key = generate_idempotency_key(body)
 

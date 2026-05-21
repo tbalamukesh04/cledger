@@ -15,6 +15,7 @@ from app.api.transactions_admin import router as transactions_admin_router
 from app.api.transactions import router as transactions_router
 from app.api.metrics import router as metrics_router
 from app.api.version import router as version_router
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.middleware.correlation import CorrelationIdMiddleware
 from app.utils.logger import log_event, log_error, LogTimer
 from app.core.log_events import LogEvent
@@ -65,6 +66,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 app.add_middleware(CorrelationIdMiddleware)
 
 from app.utils.api_errors import setup_exception_handlers
