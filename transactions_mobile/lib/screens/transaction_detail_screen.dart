@@ -31,8 +31,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     
     // 2. Setup repository to fetch fresh data
     // Issue 88-H1 / 88-H2 Fix: Prevent localized ApiService instantiation from overwriting the global JWT context.
-    // Use the global instance to retain standard auth interceptors.
-    repository = TransactionRepository(apiClient: ApiClient(ApiService.instance));
+    // ApiService shares a static _authToken, so a new instance retains the global JWT context.
+    repository = TransactionRepository(apiClient: ApiClient(ApiService()));
 
     // 3. Optionally fetch latest data in the background on load
     _fetchLatestTransaction();
