@@ -71,15 +71,12 @@ async def receive_webhook(
         
         try:
             body = json.loads(raw_body)
-            import json as _json
-            print("\n" + "="*50)
-            print("CAPTURED WEBHOOK PAYLOAD:")
-            print(_json.dumps(body, indent=2))
-            print("="*50 + "\n")
+            with open("/var/log/app/whatsapp_payload.json", "w") as dump_file:
+                import json as _json
+                dump_file.write(_json.dumps(body, indent=2))
         except json.JSONDecodeError:
             log_event(LogEvent.SYSTEM_ERROR, "Malformed JSON Payload", level=logging.WARNING, reason="malformed_json", source_ip=client_ip, status="rejected")
             raise HTTPException(status_code=400, detail="Malformed JSON Payload")
-
         
         idem_key = generate_idempotency_key(body)
 
