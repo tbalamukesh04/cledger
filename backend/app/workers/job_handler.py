@@ -33,6 +33,7 @@ from app.ai.batch_response_parser import parse_batch_response
 from app.ai.extraction_cache import get_cached_extractions_batch, cache_extraction_result
 from app.ai.config import EXTRACTION_CONFIDENCE_THRESHOLD
 from app.crud.transaction_crud import upsert_transaction
+from app.services.transaction_correction_service import correct_transaction_service, invalidate_transaction_service
 
 from app.utils.logger import log_event, log_error, LogTimer
 from app.core.log_events import LogEvent
@@ -130,6 +131,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
         valid_jobs_map = {}
         scorer = TransactionScorer()
         scoring_context_map = {}
+        mutation_context_map = {}
 
         # 2. Preprocess, Score, and Filter duplicates locally
         for job in jobs:
@@ -150,10 +152,11 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             content_hash = generate_content_hash(normalized_text, final_timestamp)
             text_hash = generate_text_hash(normalized_text)
             is_native_wamid = raw_msg.message_id and raw_msg.message_id.startswith("wamid.")
-            idempotency_key = raw_msg.message_id if is_native_wamid else f"idem_content_{content_hash}"
+            # Align format with webhook.py (idem_msg_wamid.xxx) to prevent unnecessary DB updates
+            idempotency_key = f"idem_msg_{raw_msg.message_id}" if is_native_wamid else f"idem_content_{content_hash}"
 
             if raw_msg.processed:
-                log_event(LogEvent.JOB_FAILED, message=f"RawMessage {job.raw_message_id} already processed.", level=logging.WARNING)
+                log_event(LogEvent.JOB_STARTED, message=f"RawMessage {job.raw_message_id} already processed. Replay/Duplicate safely skipped.", level=logging.WARNING, reason="replay_protection", status="success")
                 job_results[job.job_id] = "success"
                 continue
 
@@ -166,6 +169,31 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             group_whatsapp_id = raw_msg.group.group_id if raw_msg.group else None
             group_name = raw_msg.group.groupname if raw_msg.group else None
             
+            # Message Mutation Detection (Edit/Revoke)
+            msg_obj = raw_msg.raw_json.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {}).get("messages", [{}])[0]
+            context_obj = msg_obj.get("context", {})
+            is_edit = context_obj.get("edit") is True
+            original_wamid = context_obj.get("id")
+            
+            is_revoke = msg_obj.get("type") == "unsupported" or (msg_obj.get("type") == "system" and msg_obj.get("system", {}).get("type") == "revoke")
+
+            if is_revoke:
+                target_wamid = original_wamid or raw_msg.message_id
+                orig_raw = db.query(RawMessages).filter(RawMessages.message_id == target_wamid).first()
+                if orig_raw:
+                    orig_txn = db.query(Transactions).filter(Transactions.raw_message_id == orig_raw.id).first()
+                    if orig_txn:
+                        invalidate_transaction_service(db, orig_txn.id, reason="Message revoked on WhatsApp", actor_identifier=WORKER_IDENTIFIER)
+                raw_msg.processed = True
+                raw_msg.processing_status = "REVOKED"
+                raw_msg.processing_started_at = processing_started_at
+                raw_msg.processing_completed_at = datetime.now(timezone.utc)
+                job_results[job.job_id] = "success"
+                continue
+            
+            if is_edit:
+                mutation_context_map[raw_msg.id] = {"type": "edit", "original_wamid": original_wamid}
+
             preprocessed_payload = PreprocessedPayload(
                 raw_message_id=raw_msg.id,
                 participant_id=raw_msg.sender_id,
@@ -302,7 +330,16 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 raw_extracted_verb = extraction_result.transaction_verb
                 
             normalized_txn_verb = normalize_transaction_verb(raw_extracted_verb)
-            extraction_status = "SUCCESS" if (validated_amount is not None and normalized_txn_verb is not None) else ("NON_TRANSACTION" if extraction_result else "AI_EXTRACTION_FAILED")
+            
+            # AI Natural Language Reversal Detection
+            is_ai_reversal = False
+            if raw_extracted_verb and str(raw_extracted_verb).lower() in ["reversal", "undo", "reverse", "cancel"]:
+                is_ai_reversal = True
+                extraction_status = "REVERSAL_PROCESSED"
+                normalized_txn_verb = "reversal"
+            else:
+                extraction_status = "SUCCESS" if (validated_amount is not None and normalized_txn_verb is not None) else ("NON_TRANSACTION" if extraction_result else "AI_EXTRACTION_FAILED")
+            
             normalized_txn_date = normalize_extracted_date(raw_extracted_date, preprocessed_data.normalized_timestamp)
             current_meta = raw_msg.parsing_meta or {}
             
@@ -310,7 +347,16 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             txn_db_status = None
             routing_action = None
 
-            if extraction_status == "SUCCESS":
+            if extraction_status == "REVERSAL_PROCESSED":
+                last_txn = db.query(Transactions).join(RawMessages).filter(
+                    RawMessages.group_id == preprocessed_data.group_id,
+                    Transactions.status != TransactionStatus.INVALIDATED
+                ).order_by(Transactions.created_at.desc()).first()
+                if last_txn:
+                    invalidate_transaction_service(db, last_txn.id, reason="AI Reversal Intent Detected", actor_identifier=WORKER_IDENTIFIER)
+                raw_msg.is_transaction = True
+
+            elif extraction_status == "SUCCESS":
                 if confidence_score >= EXTRACTION_CONFIDENCE_THRESHOLD:
                     txn_db_status = TransactionStatus.PARSED
                     routing_action = "auto_accepted"
@@ -343,27 +389,48 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             raw_msg.parsing_meta = current_meta
 
             if extraction_status == "SUCCESS":
-                txn_data = {
-                    "tenant_id": getattr(raw_msg, "tenant_id", None),
-                    "raw_message_id": raw_msg.id,
-                    "amount": validated_amount,  
-                    "currency": normalized_currency,
-                    "txn_type": normalized_txn_verb,
-                    "txn_date": normalized_txn_date,
-                    "confidence": confidence_score,
-                    "status": txn_db_status, 
-                    "hash": preprocessed_data.message_hash,
-                    "parsing_meta": current_meta,
-                    "remarks": getattr(extraction_result, "description", getattr(extraction_result, "remarks", None))
-                }
-                try: 
-                    upsert_transaction(db=db, txn_data=txn_data, commit=False, actor_identifier=WORKER_IDENTIFIER)
-                    inc_metric("total_transactions")
-                    raw_msg.is_transaction = True
-                except ValueError as e:
-                    log_event(LogEvent.SYSTEM_ERROR, f"Duplicate transaction skipped: {e}", level=logging.WARNING)
+                mutation_ctx = mutation_context_map.get(raw_msg.id)
+                remarks_text = getattr(extraction_result, "description", getattr(extraction_result, "remarks", None))
+                
+                if mutation_ctx and mutation_ctx.get("type") == "edit" and mutation_ctx.get("original_wamid"):
+                    orig_raw = db.query(RawMessages).filter(RawMessages.message_id == mutation_ctx["original_wamid"]).first()
+                    if orig_raw:
+                        orig_txn = db.query(Transactions).filter(Transactions.raw_message_id == orig_raw.id).first()
+                        if orig_txn:
+                            correction_data = {
+                                "amount": validated_amount,
+                                "currency": normalized_currency,
+                                "txn_type": normalized_txn_verb,
+                                "txn_date": normalized_txn_date,
+                                "remarks": remarks_text
+                            }
+                            correct_transaction_service(db, orig_txn.id, correction_data, actor_identifier=WORKER_IDENTIFIER)
+                            raw_msg.is_transaction = True
+                            txn_db_status = TransactionStatus.CORRECTED
+                            log_event(LogEvent.TRANSACTION_UPDATED, "Transaction Corrected via Webhook Edit", transaction_id=orig_txn.id)
+                
+                if not raw_msg.is_transaction:
+                    txn_data = {
+                        "tenant_id": getattr(raw_msg, "tenant_id", None),
+                        "raw_message_id": raw_msg.id,
+                        "amount": validated_amount,  
+                        "currency": normalized_currency,
+                        "txn_type": normalized_txn_verb,
+                        "txn_date": normalized_txn_date,
+                        "confidence": confidence_score,
+                        "status": txn_db_status, 
+                        "hash": preprocessed_data.message_hash,
+                        "parsing_meta": current_meta,
+                        "remarks": remarks_text
+                    }
+                    try: 
+                        upsert_transaction(db=db, txn_data=txn_data, commit=False, actor_identifier=WORKER_IDENTIFIER)
+                        inc_metric("total_transactions")
+                        raw_msg.is_transaction = True
+                    except ValueError as e:
+                        log_event(LogEvent.SYSTEM_ERROR, f"Duplicate transaction skipped: {e}", level=logging.WARNING)
 
-            processing_outcome = "success" if extraction_status in ["SUCCESS", "NON_TRANSACTION"] else "review_needed"
+            processing_outcome = "success" if extraction_status in ["SUCCESS", "NON_TRANSACTION", "REVERSAL_PROCESSED"] else "review_needed"
             
             raw_msg.processed = True
             raw_msg.processing_status = processing_outcome
