@@ -24,3 +24,8 @@ secrets/
 *.pem
 
 nssm/
+backend/tests/day95_validation_summary.md
+backend/tests/day95_comparison_report.json
+backend/tests/step6_traceability_report.json
+backend/tests/step3_parsing_meta.json
+backend/tests/fixtures/batch_dataset_testing.json
