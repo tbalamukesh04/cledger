@@ -75,8 +75,8 @@ def inject_dataset():
     return injected_data
 
 def validate_pipeline(injected_data):
-    print("Awaiting worker processing (15 seconds)...")
-    time.sleep(15)
+    print("Awaiting worker processing (45 seconds)...")
+    time.sleep(45)
     
     db = SessionLocal()
     report_lines = ["# DAY 96: Schema Enforcement & Routing Validation\n"]
