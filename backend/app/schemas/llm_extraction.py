@@ -10,7 +10,7 @@ class LLMExtractionSchema(BaseModel):
     id: int
     amount: StrictFloat = Field(..., description="The parsed numeric amount")
     currency: StrictStr = Field(..., description="The 3-letter currency code")
-    transaction_verb: StrictStr = Field(..., description="Must be 'credit' or 'debit'")
+    transaction_verb: StrictStr = Field(..., description="Must be 'credit', 'debit', or 'unknown'")
     transaction_date: Optional[StrictStr] = Field(None, alias="transaction_date")
 
     @model_validator(mode='before')

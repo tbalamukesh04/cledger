@@ -13,7 +13,7 @@ class TransactionExtractionSchema(BaseModel):
     amount: float = Field(..., gt=0.0, description="The monetary amount extracted")
     currency: str = Field(..., min_length=3, max_length=3, description="The 3-letter currency code")
     date: Optional[str] = Field(None, description="ISO 8601 date string (YYYY-MM-DD).")
-    transaction_verb: str = Field(..., description="The type of transaction (credit/debit)")
+    transaction_verb: str = Field(..., description="The type of transaction (credit/debit/unknown)")
     counterparty: Optional[str] = None 
 
     @model_validator(mode='before')
