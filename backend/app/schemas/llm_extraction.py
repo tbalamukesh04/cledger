@@ -56,12 +56,9 @@ class LLMExtractionSchema(BaseModel):
         return v
 
     @field_validator("transaction_verb", mode="before")
-    def clean_transaction_verb(cls, v):
-        """Forgives capitalization variations from the LLM."""
-        if isinstance(v, str):
-            v = v.strip().lower()
-            if v not in ["credit", "debit"]:
-                raise ValueError(f"transaction_verb must be 'credit' or 'debit', got: {v}")
+    def validate_verb(cls, v):
+        if v not in ["credit", "debit", "unknown"]:
+            raise ValueError(f"transaction_verb must be 'credit', 'debit', or 'unknown', got: {v}")
         return v
         
     @field_validator("transaction_date", mode="before")
