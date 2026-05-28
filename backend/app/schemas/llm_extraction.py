@@ -5,9 +5,9 @@ from app.utils.confidence_normalization import normalize_confidence
 
 class LLMExtractionSchema(BaseModel):
     id: int
-    amount: Optional[StrictFloat] = None
-    currency: Optional[StrictStr] = None
-    transaction_verb: Optional[StrictStr] = None
+    amount: StrictFloat = Field(..., description="The parsed numeric amount")
+    currency: StrictStr = Field(..., description="The 3-letter currency code")
+    transaction_verb: StrictStr = Field(..., description="Must be 'credit' or 'debit'")
     transaction_date: Optional[StrictStr] = Field(None, alias="transaction_date")
     counterparty: Optional[StrictStr] = None
     reference: Optional[StrictStr] = None

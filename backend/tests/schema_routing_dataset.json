@@ -1,0 +1,72 @@
+[
+  {
+    "id": "val_01",
+    "description": "valid transaction message",
+    "payload": "Paid 150 ZMW to Starbucks for morning coffee.",
+    "expected_routing": "parsed",
+    "notes": "Clean extraction, high confidence expected."
+  },
+  {
+    "id": "val_02",
+    "description": "missing required keys: amount and currency",
+    "payload": "I paid John back for lunch yesterday.",
+    "expected_routing": "reject",
+    "notes": "Missing critical fields, must fail schema validation."
+  },
+  {
+    "id": "val_03",
+    "description": "ambiguous amount/currency message",
+    "payload": "Bought a coffee for 5.",
+    "expected_routing": "reject",
+    "notes": "Missing explicit currency, LLM confidence should drop below threshold or fail schema if currency is strictly required."
+  },
+  {
+    "id": "val_04",
+    "description": "conflicting transaction direction",
+    "payload": "Received 500 ZMW from John but also paid him 500 ZMW.",
+    "expected_routing": "reject",
+    "notes": "Credit/debit mismatch in a single message. Contradictory extraction that cannot be normalized safely."
+  },
+  {
+    "id": "val_05",
+    "description": "mixed currency message",
+    "payload": "Paid 50 USD which is like 1200 ZMW to the vendor.",
+    "expected_routing": "review_needed",
+    "notes": "Two currencies present. LLM might extract one but with lowered confidence, triggering review."
+  },
+  {
+    "id": "val_06",
+    "description": "noisy message with emojis and text clutter",
+    "payload": "🎉🍾 Dinner was awesome! 🍔 Paid 550 ZMW btw. 💸💯 Thanks everyone!",
+    "expected_routing": "parsed",
+    "notes": "Should seamlessly ignore noise and extract amount, currency, and direction."
+  },
+  {
+    "id": "val_07",
+    "description": "non-transaction message that still contains money-like numbers",
+    "payload": "My new phone number is 9876543210 and my pin is 1500.",
+    "expected_routing": "reject",
+    "notes": "No financial intent. Must be rejected."
+  },
+  {
+    "id": "val_08",
+    "description": "intentionally confusing financial phrases",
+    "payload": "My account balance is now 5000 ZMW after I transferred 250 ZMW for rent.",
+    "expected_routing": "parsed",
+    "notes": "Tests if model correctly extracts the 250 ZMW transaction instead of the 5000 ZMW balance."
+  },
+  {
+    "id": "val_09",
+    "description": "edited/reversal-like message that conflicts with the original",
+    "payload": "Wait, cancel that last payment of 100 ZMW, it was actually 150 ZMW.",
+    "expected_routing": "review_needed",
+    "notes": "Ambiguous intent between reversal and correction. Should flag for human review due to confidence drop."
+  },
+  {
+    "id": "val_10",
+    "description": "duplicate amounts in one message",
+    "payload": "Paid 200 ZMW to Mark and 200 ZMW to Sarah.",
+    "expected_routing": "reject",
+    "notes": "Multiple transaction intents in a single payload should be rejected to avoid partial/inaccurate commits."
+  }
+]

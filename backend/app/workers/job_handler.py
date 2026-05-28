@@ -31,7 +31,7 @@ from app.schemas.parsing_metadata import ParsingMetadata
 from app.ai.llm_extraction.extraction_service import process_extraction_batch
 from app.ai.batch_response_parser import parse_batch_response
 from app.ai.extraction_cache import get_cached_extractions_batch, cache_extraction_result
-from app.ai.config import EXTRACTION_CONFIDENCE_THRESHOLD
+from app.ai.config import EXTRACTION_CONFIDENCE_THRESHOLD, AUTO_PARSE_CONFIDENCE_THRESHOLD
 from app.crud.transaction_crud import upsert_transaction
 from app.services.transaction_correction_service import correct_transaction_service, invalidate_transaction_service
 
@@ -357,12 +357,17 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 raw_msg.is_transaction = True
 
             elif extraction_status == "SUCCESS":
-                if confidence_score >= EXTRACTION_CONFIDENCE_THRESHOLD:
+                if confidence_score >= AUTO_PARSE_CONFIDENCE_THRESHOLD:
                     txn_db_status = TransactionStatus.PARSED
                     routing_action = "auto_accepted"
-                else:
+                elif confidence_score >= EXTRACTION_CONFIDENCE_THRESHOLD:
                     txn_db_status = TransactionStatus.REVIEW_NEEDED
                     routing_action = "flagged_for_review"
+                else:
+                    # Hard reject on low confidence. Safely bypass Transactions table insertion.
+                    extraction_status = "REJECTED_LOW_CONFIDENCE"
+                    txn_db_status = None
+                    routing_action = "rejected_low_confidence"
 
             current_meta["ai_extraction"] = {
                 "source": "gemini-2.5-flash",
