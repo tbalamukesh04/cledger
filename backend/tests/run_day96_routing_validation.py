@@ -110,8 +110,8 @@ def validate_pipeline(injected_data):
         report_lines.append(f"- **Raw Status**: {processing_status}")
         
         if parsing_meta and "ai_extraction" in parsing_meta:
-            report_lines.append(f"- **AI Status**: {parsing_meta['ai_extraction'].get('status')}")
-            report_lines.append(f"- **Confidence**: {parsing_meta['ai_extraction'].get('confidence')}")
+            report_lines.append(f"- **AI Status**: {(parsing_meta.get('ai_extraction') or {}).get('status')}")
+            report_lines.append(f"- **Confidence**: {(parsing_meta.get('ai_extraction') or {}).get('confidence')}")
             
         if expected == "reject" and audit:
             report_lines.append(f"- **Audit Triggered**: Yes")
