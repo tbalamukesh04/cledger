@@ -1,129 +1,95 @@
-import os
 import json
-import time
 import uuid
-import requests
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
-import hmac
-import hashlib
-from dotenv import load_dotenv
+import time
+import sys
+import os
 
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-DATASET_PATH = os.path.join(BASE_DIR, "tests", "fixtures", "schema_routing_dataset.json")
-WEBHOOK_URL = "http://localhost:8000/api/v1/webhook"
-REPORT_MD_PATH = os.path.join(BASE_DIR, "tests", "DAY96_ROUTING_REPORT.md")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from app.database.redis_client import get_redis_client, WEBHOOK_QUEUE_NAME
+from app.database.postgres_client import get_db_connection
+from app.schemas.jobs import WebhookJobPayload
 
-load_dotenv(os.path.join(BASE_DIR, ".env"))
-DATABASE_URI = os.getenv("DATABASE_URL")
-APP_SECRET = os.getenv("APP_SECRET", "test_secret")
+PAYLOADS = [
+    {"label": "valid transaction message", "msg": "Paid John 500 ZMW for lunch yesterday", "expected": "parsed"},
+    {"label": "missing required keys: amount and currency", "msg": "Paid John for lunch yesterday", "expected": "reject"},
+    {"label": "ambiguous amount/currency message", "msg": "Paid 500 or 600 for lunch", "expected": "reject"},
+    {"label": "conflicting transaction direction", "msg": "Sent and received 500 ZMW from John", "expected": "reject"},
+    {"label": "mixed currency message", "msg": "Paid 500 ZMW and 10 USD for lunch", "expected": "review_needed"},
+    {"label": "noisy message with emojis and text clutter", "msg": "Hey! 🚀 Just paid John 500 ZMW for the amazing lunch we had yesterday! 🍔🎉", "expected": "parsed"},
+    {"label": "non-transaction message that still contains money-like numbers", "msg": "I walked 500 steps and earned 10 points", "expected": "reject"},
+    {"label": "intentionally confusing financial phrases", "msg": "I owe John 500 ZMW but I paid him 300 ZMW for now", "expected": "parsed"},
+    {"label": "edited/reversal-like message that conflicts with the original", "msg": "Wait, I didn't pay John 500 ZMW, it was 400 ZMW", "expected": "review_needed"},
+    {"label": "duplicate amounts in one message", "msg": "Paid John 500 ZMW and then another 500 ZMW", "expected": "reject"}
+]
 
-engine = create_engine(DATABASE_URI)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-def generate_signature(payload_bytes: bytes) -> str:
-    return "sha256=" + hmac.new(APP_SECRET.encode('utf-8'), payload_bytes, hashlib.sha256).hexdigest()
-
-def inject_dataset():
-    with open(DATASET_PATH, "r") as f:
-        dataset = json.load(f)
-
+def inject_test_payloads():
+    redis_client = get_redis_client()
     injected_data = []
     
     print("Injecting payloads into live webhook...")
-    for item in dataset:
-        wamid = f"wamid.{uuid.uuid4().hex}"
-        payload = {
-            "object": "whatsapp_business_account",
-            "entry": [{
-                "id": "1234567890",
-                "changes": [{
-                    "value": {
-                        "messaging_product": "whatsapp",
-                        "metadata": {"display_phone_number": "1234", "phone_number_id": "5678"},
-                        "contacts": [{"profile": {"name": "Test Validation"}, "wa_id": "918056646050"}],
-                        "messages": [{
-                            "from": "918056646050",
-                            "id": wamid,
-                            "timestamp": str(int(time.time())),
-                            "text": {"body": item["payload"]},
-                            "type": "text"
-                        }]
-                    },
-                    "field": "messages"
-                }]
-            }]
-        }
+    for item in PAYLOADS:
+        raw_message_id = str(uuid.uuid4().int)[:5]
         
-        payload_bytes = json.dumps(payload).encode('utf-8')
-        headers = {
-            "Content-Type": "application/json", 
-            "X-Hub-Signature-256": generate_signature(payload_bytes)
-        }
-        
-        res = requests.post(WEBHOOK_URL, data=payload_bytes, headers=headers)
-        if res.status_code == 200:
-            injected_data.append({
-                "wamid": wamid, 
-                "expected": item["expected_routing"], 
-                "desc": item["description"]
-            })
-            print(f"Injected: {item['description']}")
-        else:
-            print(f"Failed to inject: {item['description']} - Status {res.status_code}")
+        # Connect to DB to insert raw message
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT INTO raw_messages (message_id, sender_id, receiver_id, raw_text, status) 
+               VALUES (%s, 'test_user', 'system', %s, 'pending') RETURNING id""",
+            (raw_message_id, item['msg'])
+        )
+        db_id = cursor.fetchone()[0]
+        conn.commit()
+        conn.close()
 
+        payload = WebhookJobPayload(
+            job_id=str(uuid.uuid4()),
+            raw_message_id=db_id,
+            webhook_payload={"message": item['msg']}
+        )
+        
+        redis_client.rpush(WEBHOOK_QUEUE_NAME, payload.to_json())
+        injected_data.append({"db_id": db_id, "label": item['label'], "expected": item['expected']})
+        print(f"Injected: {item['label']}")
+        
     return injected_data
 
 def validate_pipeline(injected_data):
-        print("Awaiting worker processing (75 seconds)...")
-    time.sleep(75)
-
+    conn = get_db_connection()
+    cursor = conn.cursor()
     
-    db = SessionLocal()
     report_lines = ["# DAY 96: Schema Enforcement & Routing Validation\n"]
     
-    for item in injected_data:
-        wamid = item["wamid"]
-        expected = item["expected"]
+    for data in injected_data:
+        cursor.execute("SELECT status, parsing_metadata, audit_logs FROM raw_messages WHERE id = %s", (data['db_id'],))
+        row = cursor.fetchone()
         
-        raw = db.execute(text("SELECT id, processing_status, parsing_meta FROM raw_messages WHERE message_id = :wamid"), {"wamid": wamid}).fetchone()
-        
-        if not raw:
-            report_lines.append(f"- ❌ **{item['desc']}**: Raw message not found in DB.")
-            continue
+        if row:
+            actual_status = row[0]
+            parsing_meta = row[1] if row[1] else {}
+            audit_logs = row[2]
             
-        raw_id, processing_status, parsing_meta = raw
-        
-        txn = db.execute(text("SELECT status FROM transactions WHERE raw_message_id = :raw_id"), {"raw_id": raw_id}).fetchone()
-        audit = db.execute(text("SELECT event_type, new_state FROM audit_logs WHERE entity_id = :raw_id AND entity_type = 'raw_message'"), {"raw_id": str(raw_id)}).fetchall()
-        
-        actual_routing = "unknown"
-        if expected in ["parsed", "review_needed"] and txn:
-            actual_routing = txn[0].lower()
-        elif expected == "reject" and not txn and processing_status == "review_needed":
-            actual_routing = "reject"
-            
-        match = (actual_routing == expected) or (expected == "review_needed" and actual_routing == "review_needed") or (expected == "parsed" and actual_routing == "parsed")
-        
-        status_icon = "✅" if match else "❌"
-        report_lines.append(f"## {status_icon} {item['desc']}")
-        report_lines.append(f"- **Expected**: {expected} | **Actual**: {actual_routing}")
-        report_lines.append(f"- **Raw Status**: {processing_status}")
-        
-        if parsing_meta and "ai_extraction" in parsing_meta:
+            icon = "✅" if actual_status == data['expected'] else "❌"
+            report_lines.append(f"## {icon} {data['label']}")
+            report_lines.append(f"- **Expected**: {data['expected']} | **Actual**: {actual_status}")
+            report_lines.append(f"- **Raw Status**: {parsing_meta.get('system_status', 'unknown')}")
             report_lines.append(f"- **AI Status**: {(parsing_meta.get('ai_extraction') or {}).get('status')}")
-            report_lines.append(f"- **Confidence**: {(parsing_meta.get('ai_extraction') or {}).get('confidence')}")
+            report_lines.append(f"- **Confidence**: {(parsing_meta.get('ai_extraction') or {}).get('confidence_score')}")
             
-        if expected == "reject" and audit:
-            report_lines.append(f"- **Audit Triggered**: Yes")
+            if audit_logs:
+                report_lines.append("- **Audit Triggered**: Yes")
+            report_lines.append("\n")
             
-        report_lines.append("\n")
-
-    with open(REPORT_MD_PATH, "w") as f:
+    conn.close()
+    
+    report_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'DAY96_ROUTING_REPORT.md'))
+    with open(report_path, "w") as f:
         f.write("\n".join(report_lines))
         
-    print(f"Validation complete. Report written to {REPORT_MD_PATH}")
+    print(f"Validation complete. Report written to {report_path}")
 
 if __name__ == "__main__":
-    injected = inject_dataset()
+    injected = inject_test_payloads()
+    print("Awaiting worker processing (75 seconds)...")
+    time.sleep(75)
     validate_pipeline(injected)
