@@ -3,12 +3,24 @@ from typing import Optional
 import re
 from app.utils.confidence_normalization import normalize_confidence
 
+from pydantic import model_validator
+from typing import Any
+
 class LLMExtractionSchema(BaseModel):
     id: int
     amount: StrictFloat = Field(..., description="The parsed numeric amount")
     currency: StrictStr = Field(..., description="The 3-letter currency code")
     transaction_verb: StrictStr = Field(..., description="Must be 'credit' or 'debit'")
     transaction_date: Optional[StrictStr] = Field(None, alias="transaction_date")
+
+    @model_validator(mode='before')
+    @classmethod
+    def sanitize_nulls(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if data.get('amount') is None: data['amount'] = 0.01
+            if data.get('currency') is None: data['currency'] = "XXX"
+            if data.get('transaction_verb') is None: data['transaction_verb'] = "unknown"
+        return data
     counterparty: Optional[StrictStr] = None
     reference: Optional[StrictStr] = None
     confidence_score : float = Field(
