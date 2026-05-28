@@ -94,7 +94,7 @@ def validate_pipeline(injected_data):
         raw_id, processing_status, parsing_meta = raw
         
         txn = db.execute(text("SELECT status FROM transactions WHERE raw_message_id = :raw_id"), {"raw_id": raw_id}).fetchone()
-        audit = db.execute(text("SELECT event_type, new_state FROM transaction_audit WHERE entity_id = :raw_id AND entity_type = 'raw_message'"), {"raw_id": str(raw_id)}).fetchall()
+        audit = db.execute(text("SELECT event_type, new_state FROM audit_logs WHERE entity_id = :raw_id AND entity_type = 'raw_message'"), {"raw_id": str(raw_id)}).fetchall()
         
         actual_routing = "unknown"
         if expected in ["parsed", "review_needed"] and txn:
