@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import redis
 import uuid
 import requests
 from sqlalchemy import create_engine, text
@@ -75,8 +76,19 @@ def inject_dataset():
     return injected_data
 
 def validate_pipeline(injected_data):
-    print("Awaiting worker processing (45 seconds)...")
-    time.sleep(45)
+        print("Awaiting worker processing (dynamic polling)...")
+    r = redis.Redis(host='localhost', port=6379, db=0)
+    timeout = 90
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        queue_len = r.llen('cledger:webhook_processing_queue')
+        active_len = r.llen('cledger:webhook_active_queue')
+        if queue_len == 0 and active_len == 0:
+            time.sleep(2) # Buffer for final DB commits
+            break
+        time.sleep(2)
+
     
     db = SessionLocal()
     report_lines = ["# DAY 96: Schema Enforcement & Routing Validation\n"]
