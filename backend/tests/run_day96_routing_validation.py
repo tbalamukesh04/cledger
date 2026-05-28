@@ -76,11 +76,11 @@ def inject_dataset():
     return injected_data
 
 def validate_pipeline(injected_data):
-    print("Awaiting worker processing (75 seconds)...")
+    print("Awaiting worker processing (75 seconds for final DB commits)...")
     time.sleep(75)
     
     db = SessionLocal()
-    report_lines = ["# DAY 96: Schema Enforcement & Routing Validation\n"]
+    report_lines = ["# DAY 96: Confidence Scoring & Routing Validation\n"]
     
     for item in injected_data:
         wamid = item["wamid"]
@@ -89,7 +89,7 @@ def validate_pipeline(injected_data):
         raw = db.execute(text("SELECT id, processing_status, parsing_meta FROM raw_messages WHERE message_id = :wamid"), {"wamid": wamid}).fetchone()
         
         if not raw:
-            report_lines.append(f"- ❌ **{item['desc']}**: Raw message not found in DB.")
+            report_lines.append(f"## ❌ {item['desc']}\n- **Result**: Raw message not found in DB.")
             continue
             
         raw_id, processing_status, parsing_meta = raw
@@ -98,12 +98,12 @@ def validate_pipeline(injected_data):
         audit = db.execute(text("SELECT event_type, new_state FROM audit_logs WHERE entity_id = :raw_id AND entity_type = 'raw_message'"), {"raw_id": str(raw_id)}).fetchall()
         
         actual_routing = "unknown"
-        if expected in ["parsed", "review_needed"] and txn:
+        if txn:
             actual_routing = txn[0].lower()
-        elif expected == "reject" and not txn and processing_status == "review_needed":
-            actual_routing = "reject"
+        elif not txn and processing_status in ["review_needed", "rejected", "failed"]:
+            actual_routing = "reject" if processing_status in ["rejected", "failed"] else "review_needed"
             
-        match = (actual_routing == expected) or (expected == "review_needed" and actual_routing == "review_needed") or (expected == "parsed" and actual_routing == "parsed")
+        match = (actual_routing == expected)
         
         status_icon = "✅" if match else "❌"
         report_lines.append(f"## {status_icon} {item['desc']}")
@@ -111,13 +111,16 @@ def validate_pipeline(injected_data):
         report_lines.append(f"- **Raw Status**: {processing_status}")
         
         if parsing_meta and "ai_extraction" in parsing_meta:
-            report_lines.append(f"- **AI Status**: {(parsing_meta.get('ai_extraction') or {}).get('status')}")
-            report_lines.append(f"- **Confidence**: {(parsing_meta.get('ai_extraction') or {}).get('confidence')}")
+            ai_data = parsing_meta.get("ai_extraction") or {}
+            report_lines.append(f"- **AI Status**: {ai_data.get('status')}")
+            report_lines.append(f"- **Confidence**: {ai_data.get('confidence')}")
             
-        if expected == "reject" and audit:
-            report_lines.append(f"- **Audit Triggered**: Yes")
+        if audit:
+            report_lines.append(f"- **Audit Logs Captured**: {len(audit)} entries")
             
         report_lines.append("\n")
+
+    db.close()
 
     with open(REPORT_MD_PATH, "w", encoding="utf-8") as f:
         f.write("\n".join(report_lines))
