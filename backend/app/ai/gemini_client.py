@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 class GeminiClient:
-    def __init__(self, api_key: Optional[str] = GEMINI_API_KEY, timeout: int = 15, max_retries=3):
+    def __init__(self, api_key: Optional[str] = GEMINI_API_KEY, timeout: int = 45, max_retries=5):
         self.api_key = api_key
         self.timeout = timeout
         self.max_retries = max_retries

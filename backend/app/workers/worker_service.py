@@ -103,6 +103,9 @@ def start_worker():
                 
                 # We execute the new batch handler
                 results = process_webhook_batch(batch_jobs)
+                
+                # Throttle to respect Gemini rate limits
+                time.sleep(3) 
 
                 # 3. Cleanup Active Queue based on results
                 for payload_str, job in zip(batch_payloads, batch_jobs):
