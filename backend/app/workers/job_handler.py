@@ -410,11 +410,10 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                                 "remarks": remarks_text
                             }
                             correct_transaction_service(db, orig_txn.id, correction_data, actor_identifier=WORKER_IDENTIFIER)
-                            raw_msg.is_transaction = True
                             txn_db_status = TransactionStatus.CORRECTED
                             log_event(LogEvent.TRANSACTION_UPDATED, "Transaction Corrected via Webhook Edit", transaction_id=orig_txn.id)
                 
-                if not raw_msg.is_transaction:
+                if txn_db_status in [TransactionStatus.PARSED, TransactionStatus.REVIEW_NEEDED]:
                     txn_data = {
                         "tenant_id": getattr(raw_msg, "tenant_id", None),
                         "raw_message_id": raw_msg.id,
