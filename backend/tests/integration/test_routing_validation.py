@@ -7,6 +7,7 @@ from app.models.transactions import Transactions, TransactionStatus
 from app.models.audit_logs import AuditLog
 from app.database.database import SessionLocal
 import json
+from datetime import datetime, timezone
 
 @pytest.fixture
 def db_session():
@@ -30,7 +31,19 @@ def test_malformed_json_rejection_step_5(mock_extraction, db_session):
     }
     
     # Assuming job payload and raw_message ID 1 exists in test DB setup
-    job = WebhookJobPayload(job_id="test-job-1", raw_message_id=1, webhook_event_type="message", message_timestamp="2026-05-29T10:00:00Z")
+    raw = RawMessages(id=1, sender_id=1, group_id=1, raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1672531200"}]}}]}]}, hash="hash_1", processed=False)
+    db_session.add(raw)
+    db_session.commit()
+
+    job = WebhookJobPayload(
+        job_id="test-job-1", 
+        raw_message_id=1, 
+        webhook_event_type="message", 
+        message_timestamp="2026-05-29T10:00:00Z",
+        participant_id=1,
+        group_id=1,
+        ingestion_time=datetime.now(timezone.utc)
+    )
     
     results = process_webhook_batch([job])
     
@@ -57,7 +70,19 @@ def test_strict_schema_enforcement_step_3(mock_extraction, db_session):
         "metadata": {"prompt_version": "v1.1"}
     }
     
-    job = WebhookJobPayload(job_id="test-job-2", raw_message_id=2, webhook_event_type="message", message_timestamp="2026-05-29T10:00:00Z")
+    raw = RawMessages(id=2, sender_id=1, group_id=1, raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1672531200"}]}}]}]}, hash="hash_2", processed=False)
+    db_session.add(raw)
+    db_session.commit()
+
+    job = WebhookJobPayload(
+        job_id="test-job-2", 
+        raw_message_id=2, 
+        webhook_event_type="message", 
+        message_timestamp="2026-05-29T10:00:00Z",
+        participant_id=1,
+        group_id=1,
+        ingestion_time=datetime.now(timezone.utc)
+    )
     process_webhook_batch([job])
     
     raw = db_session.query(RawMessages).filter(RawMessages.id == 2).first()
@@ -80,7 +105,19 @@ def test_low_confidence_routing_step_4(mock_extraction, db_session):
         "metadata": {"prompt_version": "v1.1"}
     }
     
-    job = WebhookJobPayload(job_id="test-job-3", raw_message_id=3, webhook_event_type="message", message_timestamp="2026-05-29T10:00:00Z")
+    raw = RawMessages(id=3, sender_id=1, group_id=1, raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1672531200"}]}}]}]}, hash="hash_3", processed=False)
+    db_session.add(raw)
+    db_session.commit()
+
+    job = WebhookJobPayload(
+        job_id="test-job-3", 
+        raw_message_id=3, 
+        webhook_event_type="message", 
+        message_timestamp="2026-05-29T10:00:00Z",
+        participant_id=1,
+        group_id=1,
+        ingestion_time=datetime.now(timezone.utc)
+    )
     process_webhook_batch([job])
     
     raw = db_session.query(RawMessages).filter(RawMessages.id == 3).first()
