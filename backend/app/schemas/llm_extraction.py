@@ -13,14 +13,6 @@ class LLMExtractionSchema(BaseModel):
     transaction_verb: StrictStr = Field(..., description="Must be 'credit', 'debit', or 'unknown'")
     transaction_date: Optional[StrictStr] = Field(None, alias="transaction_date")
 
-    @model_validator(mode='before')
-    @classmethod
-    def sanitize_nulls(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            if data.get('amount') is None: data['amount'] = 0.01
-            if data.get('currency') is None: data['currency'] = "XXX"
-            if data.get('transaction_verb') is None: data['transaction_verb'] = "unknown"
-        return data
     counterparty: Optional[StrictStr] = None
     reference: Optional[StrictStr] = None
     confidence_score : float = Field(

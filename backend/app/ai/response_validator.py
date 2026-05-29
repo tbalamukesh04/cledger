@@ -16,14 +16,6 @@ class TransactionExtractionSchema(BaseModel):
     transaction_verb: str = Field(..., description="The type of transaction (credit/debit/unknown)")
     counterparty: Optional[str] = None 
 
-    @model_validator(mode='before')
-    @classmethod
-    def sanitize_nulls(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            if data.get('amount') is None: data['amount'] = 0.01
-            if data.get('currency') is None: data['currency'] = "XXX"
-            if data.get('transaction_verb') is None: data['transaction_verb'] = "unknown"
-        return data
     reference: Optional[str] = None
     confidence: float = Field(..., ge=0.0, le=1.0, description="Extraction confidence")
 
