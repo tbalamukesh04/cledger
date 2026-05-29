@@ -31,6 +31,12 @@ def test_malformed_json_rejection_step_5(mock_extraction, db_session):
     }
     
     # Assuming job payload and raw_message ID 1 exists in test DB setup
+    # Cleanup previous test runs
+    db_session.query(Transactions).filter(Transactions.raw_message_id == 1).delete()
+    db_session.query(AuditLog).filter(AuditLog.entity_id == "1").delete()
+    db_session.query(RawMessages).filter(RawMessages.id == 1).delete()
+    db_session.commit()
+
     raw = RawMessages(id=1, sender_id=1, group_id=1, message_id="wamid.1", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1672531200"}]}}]}]}, hash="hash_1", processed=False)
     db_session.add(raw)
     db_session.commit()
@@ -70,6 +76,13 @@ def test_strict_schema_enforcement_step_3(mock_extraction, db_session):
         "metadata": {"prompt_version": "v1.1"}
     }
     
+    db_session.query(Transactions).filter(Transactions.raw_message_id == 2).delete()
+    db_session.query(AuditLog).filter(AuditLog.entity_id == "2").delete()
+    db_session.query(RawMessages).filter(RawMessages.id == 2).delete()
+    db_session.query(AuditLog).filter(AuditLog.entity_id == "2").delete()
+    db_session.query(RawMessages).filter(RawMessages.id == 2).delete()
+    db_session.commit()
+
     raw = RawMessages(id=2, sender_id=1, group_id=1, message_id="wamid.2", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1672531200"}]}}]}]}, hash="hash_2", processed=False)
     db_session.add(raw)
     db_session.commit()
@@ -105,6 +118,11 @@ def test_low_confidence_routing_step_4(mock_extraction, db_session):
         "metadata": {"prompt_version": "v1.1"}
     }
     
+    db_session.query(Transactions).filter(Transactions.raw_message_id == 3).delete()
+    db_session.query(AuditLog).filter(AuditLog.entity_id == "3").delete()
+    db_session.query(RawMessages).filter(RawMessages.id == 3).delete()
+    db_session.commit()
+
     raw = RawMessages(id=3, sender_id=1, group_id=1, message_id="wamid.3", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1672531200"}]}}]}]}, hash="hash_3", processed=False)
     db_session.add(raw)
     db_session.commit()
