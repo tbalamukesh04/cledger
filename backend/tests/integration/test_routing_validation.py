@@ -36,7 +36,7 @@ def test_malformed_json_rejection_step_5(mock_extraction, db_session):
     db_session.query(RawMessages).filter(RawMessages.id == 9001).delete()
     db_session.commit()
 
-    raw = RawMessages(id=9001, sender_id=1, group_id=1, message_id="wamid.9001", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9001", processed=False)
+    raw = RawMessages(id=9001, sender_id=1, group_id=1, message_id="wamid.9001", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Paid 150 ZMW for lunch"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9001", processed=False)
     db_session.add(raw)
     db_session.commit()
 
@@ -71,14 +71,14 @@ def test_strict_schema_enforcement_step_3(mock_extraction, db_session):
     """
     # Missing 'amount' and 'currency'
     mock_extraction.return_value = {
-        "raw_response": {"candidates": [{"content": {"parts": [{"text": json.dumps([{"id": 2, "transaction_verb": "credit"}])}]}}]},
+        "raw_response": {"candidates": [{"content": {"parts": [{"text": json.dumps([{"id": 9002, "transaction_verb": "credit"}])}]}}]},
         "metadata": {"prompt_version": "v1.1"}
     }
     db_session.query(AuditLog).filter(AuditLog.entity_id == "9002").delete()
     db_session.query(RawMessages).filter(RawMessages.id == 9002).delete()
     db_session.commit()
 
-    raw = RawMessages(id=9002, sender_id=1, group_id=1, message_id="wamid.9002", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9002", processed=False)
+    raw = RawMessages(id=9002, sender_id=1, group_id=1, message_id="wamid.9002", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Paid 150 ZMW for lunch"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9002", processed=False)
     db_session.add(raw)
     db_session.commit()
 
@@ -109,11 +109,11 @@ def test_low_confidence_routing_step_4(mock_extraction, db_session):
     """
     # Valid schema, but confidence is 0.1
     mock_extraction.return_value = {
-        "raw_response": {"candidates": [{"content": {"parts": [{"text": json.dumps([{"id": 3, "amount": 100, "currency": "ZMW", "transaction_verb": "credit", "confidence_score": 0.1}])}]}}]},
+        "raw_response": {"candidates": [{"content": {"parts": [{"text": json.dumps([{"id": 9003, "amount": 100, "currency": "ZMW", "transaction_verb": "credit", "confidence_score": 0.1}])}]}}]},
         "metadata": {"prompt_version": "v1.1"}
     }
-    
-    txn = db_session.query(Transactions).filter(Transactions.raw_message_id == 3).first()
+
+    txn = db_session.query(Transactions).filter(Transactions.raw_message_id == 9003).first()
     if txn:
         db_session.query(TransactionAudit).filter(TransactionAudit.transaction_id == txn.id).delete()
         db_session.delete(txn)
@@ -121,7 +121,7 @@ def test_low_confidence_routing_step_4(mock_extraction, db_session):
     db_session.query(RawMessages).filter(RawMessages.id == 9003).delete()
     db_session.commit()
 
-    raw = RawMessages(id=9003, sender_id=1, group_id=1, message_id="wamid.9003", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9003", processed=False)
+    raw = RawMessages(id=9003, sender_id=1, group_id=1, message_id="wamid.9003", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Paid 150 ZMW for lunch"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9003", processed=False)
     db_session.add(raw)
     db_session.commit()
 
