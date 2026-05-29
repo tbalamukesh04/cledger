@@ -68,5 +68,21 @@
     "payload": "Paid 200 ZMW to Mark and 200 ZMW to Sarah.",
     "expected_routing": "reject",
     "notes": "Multiple transaction intents in a single payload should be rejected to avoid partial/inaccurate commits."
+  },
+  {
+    "description": "Syntax-Level Error: Truncated JSON response",
+    "payload": "Paid John 500 ZMW but the LLM output is truncated: {\"id\": \"9999\", \"amount\": 500",
+    "expected_routing": "reject"
+  },
+  {
+    "description": "Structural-Level Error: Root Object Mismatch",
+    "payload": "Paid John 500 ZMW but LLM returns flat dict instead of array: {\"id\": \"9999\", \"amount\": 500}",
+    "expected_routing": "reject"
+  },
+  {
+    "description": "Schema-Level Error: Missing Required Amount Key",
+    "payload": "Paid John but currency is missing and type is invalid",
+    "expected_routing": "reject"
   }
+
 ]
