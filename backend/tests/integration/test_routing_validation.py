@@ -62,7 +62,7 @@ def test_malformed_json_rejection_step_5(mock_extraction, db_session):
     assert txn is None # No unsafe persistence
     
     audit = db_session.query(AuditLog).filter(AuditLog.entity_id == "9001").first()
-    assert audit.new_state["reason"] == "LLM_SCHEMA_INVALID"
+    assert audit.new_state["reason"] == "AI_EXTRACTION_FAILED"
 
 @patch("app.workers.job_handler.process_extraction_batch")
 def test_strict_schema_enforcement_step_3(mock_extraction, db_session):
@@ -100,7 +100,7 @@ def test_strict_schema_enforcement_step_3(mock_extraction, db_session):
     assert txn is None
     
     audit = db_session.query(AuditLog).filter(AuditLog.entity_id == "9002").first()
-    assert audit.new_state["reason"] == "LLM_SCHEMA_INVALID"
+    assert audit.new_state["reason"] == "AI_EXTRACTION_FAILED"
 
 @patch("app.workers.job_handler.process_extraction_batch")
 def test_low_confidence_routing_step_4(mock_extraction, db_session):
@@ -109,7 +109,7 @@ def test_low_confidence_routing_step_4(mock_extraction, db_session):
     """
     # Valid schema, but confidence is 0.1
     mock_extraction.return_value = {
-        "raw_response": {"candidates": [{"content": {"parts": [{"text": json.dumps([{"id": 9003, "amount": 100, "currency": "ZMW", "transaction_verb": "credit", "confidence_score": 0.1}])}]}}]},
+        "raw_response": {"candidates": [{"content": {"parts": [{"text": json.dumps([{"id": 9003, "amount": 100, "currency": "ZMW", "transaction_verb": "credit", "confidence": 0.1}])}]}}]},
         "metadata": {"prompt_version": "v1.1"}
     }
 
