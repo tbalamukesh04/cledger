@@ -32,23 +32,19 @@ def test_malformed_json_rejection_step_5(mock_extraction, db_session):
     }
     
     # Cleanup previous test runs
-    txn = db_session.query(Transactions).filter(Transactions.raw_message_id == 1).first()
-    if txn:
-        db_session.query(TransactionAudit).filter(TransactionAudit.transaction_id == txn.id).delete()
-        db_session.delete(txn)
-    db_session.query(AuditLog).filter(AuditLog.entity_id == "1").delete()
-    db_session.query(RawMessages).filter(RawMessages.id == 1).delete()
+    db_session.query(AuditLog).filter(AuditLog.entity_id == "9001").delete()
+    db_session.query(RawMessages).filter(RawMessages.id == 9001).delete()
     db_session.commit()
 
-    raw = RawMessages(id=1, sender_id=1, group_id=1, message_id="wamid.1", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1780048800"}]}}]}]}, hash="hash_1", processed=False)
+    raw = RawMessages(id=9001, sender_id=1, group_id=1, message_id="wamid.9001", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9001", processed=False)
     db_session.add(raw)
     db_session.commit()
 
     job = WebhookJobPayload(
-        job_id="test-job-1", 
-        raw_message_id=1, 
+        job_id="test-job-9001", 
+        raw_message_id=9001, 
         webhook_event_type="message", 
-        message_timestamp="2026-05-29T10:00:00Z",
+        message_timestamp="2026-05-29T05:00:00Z",
         participant_id=1,
         group_id=1,
         ingestion_time=datetime.now(timezone.utc)
@@ -56,16 +52,16 @@ def test_malformed_json_rejection_step_5(mock_extraction, db_session):
     
     results = process_webhook_batch([job])
     
-    assert results["test-job-1"] == "success" # Job completed safely without infinite retry
+    assert results["test-job-9001"] == "success" # Job completed safely without infinite retry
     
-    raw = db_session.query(RawMessages).filter(RawMessages.id == 1).first()
+    raw = db_session.query(RawMessages).filter(RawMessages.id == 9001).first()
     assert raw.processing_status == "review_needed"
     assert raw.parsing_meta["ai_extraction"]["status"] == "AI_EXTRACTION_FAILED"
     
-    txn = db_session.query(Transactions).filter(Transactions.raw_message_id == 1).first()
+    txn = db_session.query(Transactions).filter(Transactions.raw_message_id == 9001).first()
     assert txn is None # No unsafe persistence
     
-    audit = db_session.query(AuditLog).filter(AuditLog.entity_id == "1").first()
+    audit = db_session.query(AuditLog).filter(AuditLog.entity_id == "9001").first()
     assert audit.new_state["reason"] == "LLM_SCHEMA_INVALID"
 
 @patch("app.workers.job_handler.process_extraction_batch")
@@ -78,36 +74,32 @@ def test_strict_schema_enforcement_step_3(mock_extraction, db_session):
         "raw_response": {"candidates": [{"content": {"parts": [{"text": json.dumps([{"id": 2, "transaction_verb": "credit"}])}]}}]},
         "metadata": {"prompt_version": "v1.1"}
     }
-    txn = db_session.query(Transactions).filter(Transactions.raw_message_id == 2).first()
-    if txn:
-        db_session.query(TransactionAudit).filter(TransactionAudit.transaction_id == txn.id).delete()
-        db_session.delete(txn)
-    db_session.query(AuditLog).filter(AuditLog.entity_id == "2").delete()
-    db_session.query(RawMessages).filter(RawMessages.id == 2).delete()
+    db_session.query(AuditLog).filter(AuditLog.entity_id == "9002").delete()
+    db_session.query(RawMessages).filter(RawMessages.id == 9002).delete()
     db_session.commit()
 
-    raw = RawMessages(id=2, sender_id=1, group_id=1, message_id="wamid.2", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1780048800"}]}}]}]}, hash="hash_2", processed=False)
+    raw = RawMessages(id=9002, sender_id=1, group_id=1, message_id="wamid.9002", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9002", processed=False)
     db_session.add(raw)
     db_session.commit()
 
     job = WebhookJobPayload(
-        job_id="test-job-2", 
-        raw_message_id=2, 
+        job_id="test-job-9002", 
+        raw_message_id=9002, 
         webhook_event_type="message", 
-        message_timestamp="2026-05-29T10:00:00Z",
+        message_timestamp="2026-05-29T05:00:00Z",
         participant_id=1,
         group_id=1,
         ingestion_time=datetime.now(timezone.utc)
     )
     process_webhook_batch([job])
-    
-    raw = db_session.query(RawMessages).filter(RawMessages.id == 2).first()
+
+    raw = db_session.query(RawMessages).filter(RawMessages.id == 9002).first()
     assert raw.processing_status == "review_needed"
     
-    txn = db_session.query(Transactions).filter(Transactions.raw_message_id == 2).first()
+    txn = db_session.query(Transactions).filter(Transactions.raw_message_id == 9002).first()
     assert txn is None
     
-    audit = db_session.query(AuditLog).filter(AuditLog.entity_id == "2").first()
+    audit = db_session.query(AuditLog).filter(AuditLog.entity_id == "9002").first()
     assert audit.new_state["reason"] == "LLM_SCHEMA_INVALID"
 
 @patch("app.workers.job_handler.process_extraction_batch")
@@ -125,31 +117,31 @@ def test_low_confidence_routing_step_4(mock_extraction, db_session):
     if txn:
         db_session.query(TransactionAudit).filter(TransactionAudit.transaction_id == txn.id).delete()
         db_session.delete(txn)
-    db_session.query(AuditLog).filter(AuditLog.entity_id == "3").delete()
-    db_session.query(RawMessages).filter(RawMessages.id == 3).delete()
+    db_session.query(AuditLog).filter(AuditLog.entity_id == "9003").delete()
+    db_session.query(RawMessages).filter(RawMessages.id == 9003).delete()
     db_session.commit()
 
-    raw = RawMessages(id=3, sender_id=1, group_id=1, message_id="wamid.3", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1780048800"}]}}]}]}, hash="hash_3", processed=False)
+    raw = RawMessages(id=9003, sender_id=1, group_id=1, message_id="wamid.9003", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Test"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9003", processed=False)
     db_session.add(raw)
     db_session.commit()
 
     job = WebhookJobPayload(
-        job_id="test-job-3", 
-        raw_message_id=3, 
+        job_id="test-job-9003", 
+        raw_message_id=9003, 
         webhook_event_type="message", 
-        message_timestamp="2026-05-29T10:00:00Z",
+        message_timestamp="2026-05-29T05:00:00Z",
         participant_id=1,
         group_id=1,
         ingestion_time=datetime.now(timezone.utc)
     )
     process_webhook_batch([job])
-    
-    raw = db_session.query(RawMessages).filter(RawMessages.id == 3).first()
+
+    raw = db_session.query(RawMessages).filter(RawMessages.id == 9003).first()
     assert raw.processing_status == "review_needed"
     assert raw.parsing_meta["ai_extraction"]["status"] == "REJECTED_LOW_CONFIDENCE"
     
-    txn = db_session.query(Transactions).filter(Transactions.raw_message_id == 3).first()
+    txn = db_session.query(Transactions).filter(Transactions.raw_message_id == 9003).first()
     assert txn is None
     
-    audit = db_session.query(AuditLog).filter(AuditLog.entity_id == "3").first()
+    audit = db_session.query(AuditLog).filter(AuditLog.entity_id == "9003").first()
     assert audit.new_state["reason"] == "LOW_CONFIDENCE"
