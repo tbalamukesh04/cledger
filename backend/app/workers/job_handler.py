@@ -442,6 +442,9 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             raw_msg.processing_completed_at = datetime.now(timezone.utc)
 
             if processing_outcome == "review_needed":
+                audit_reason = "LOW_CONFIDENCE" if extraction_status == "REJECTED_LOW_CONFIDENCE" else (
+                    "AI_EXTRACTION_FAILED" if extraction_status == "AI_EXTRACTION_FAILED" else "LLM_SCHEMA_INVALID"
+                )
                 audit = AuditLog(
                     entity_type="raw_message",
                     entity_id=str(raw_msg.id),
@@ -449,7 +452,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                     actor_type=ActorType.SYSTEM,
                     actor_identifier=WORKER_IDENTIFIER,
                     old_state=None,
-                    new_state={"status": "review_needed", "reason": "LLM_SCHEMA_INVALID"}
+                    new_state={"status": "review_needed", "reason": audit_reason}
                 )
                 db.add(audit)
             
