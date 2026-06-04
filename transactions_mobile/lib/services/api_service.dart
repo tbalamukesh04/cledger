@@ -61,6 +61,8 @@ class ApiService {
   static String? _authToken; // Upgraded to static to persist across instances
 
   ApiService() {
+    print('DEBUG: Initializing ApiService with Base URL: "${ApiConfig.baseUrl}"');
+    print('DEBUG: Current Environment: "${ApiConfig.currentEnvironment}"');
     _dio = Dio(BaseOptions(
       baseUrl: ApiConfig.baseUrl,
       connectTimeout: const Duration(seconds: 10),
@@ -74,8 +76,8 @@ class ApiService {
     // Automated Dev Token Negotiation Interceptor
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        // Negotiate token if missing, bypassing the token endpoint itself to prevent infinite loops
-        if (!options.path.endsWith('/dev-token') && (_authToken == null || _authToken!.isEmpty)) {
+        // Only attempt dev token negotiation if explicitly in a development environment
+        if (ApiConfig.isDevelopment && !options.path.endsWith('/dev-token') && (_authToken == null || _authToken!.isEmpty)) {
           try {
             print('--> [Auth] Negotiating development token...');
             final tokenDio = Dio(BaseOptions(baseUrl: ApiConfig.baseUrl));
@@ -190,9 +192,10 @@ class ApiService {
         data: responseData,
       );
     } else {
+      print('FATAL NETWORK ERROR: Type: ${e.type}, Message: ${e.message}, Error: ${e.error}');
       throw ApiException(
         statusCode: 500,
-        message: 'Network error or timeout: Please check your internet connection.',
+        message: 'Network error or timeout: Please check your internet connection. (Error: ${e.type})',
       );
     }
   }

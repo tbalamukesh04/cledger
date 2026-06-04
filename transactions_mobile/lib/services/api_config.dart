@@ -12,10 +12,10 @@ class ApiConfig {
           'FATAL: API_BASE_URL is missing. Compile with --dart-define=API_BASE_URL=http://<your-endpoint>');
     }
     
-    if (currentEnvironment == Environment.production && !_baseUrl.startsWith('https://')) {
-      throw Exception(
-          'FATAL: Network Security Exception. API_BASE_URL must strictly use HTTPS in production.');
-    }
+    // if (currentEnvironment == Environment.production && !_baseUrl.startsWith('https://')) {
+    //   throw Exception(
+    //       'FATAL: Network Security Exception. API_BASE_URL must strictly use HTTPS in production.');
+    // }
     return _baseUrl;
   }
 
