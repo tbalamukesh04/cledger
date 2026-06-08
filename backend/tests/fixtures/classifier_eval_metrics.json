@@ -1,0 +1,503 @@
+{
+  "run_summary": {
+    "total_entries": 140,
+    "correctly_classified": 106,
+    "transaction_entries": 59,
+    "non_transaction_entries": 81,
+    "threshold": 2
+  },
+  "confusion_matrix": {
+    "TP": 59,
+    "FN": 0,
+    "TN": 47,
+    "FP": 34
+  },
+  "metrics": {
+    "accuracy": 0.757143,
+    "precision": 0.634409,
+    "recall": 1.0,
+    "specificity": 0.580247,
+    "false_positive_rate": 0.419753,
+    "false_negative_rate": 0.0,
+    "f1_score": 0.776316
+  },
+  "score_distribution": {
+    "-4": {
+      "count": 10,
+      "gate": "< threshold",
+      "TP": 0,
+      "FN": 0,
+      "TN": 10,
+      "FP": 0
+    },
+    "-2": {
+      "count": 4,
+      "gate": "< threshold",
+      "TP": 0,
+      "FN": 0,
+      "TN": 4,
+      "FP": 0
+    },
+    "0": {
+      "count": 33,
+      "gate": "< threshold",
+      "TP": 0,
+      "FN": 0,
+      "TN": 33,
+      "FP": 0
+    },
+    "2": {
+      "count": 18,
+      "gate": ">= threshold",
+      "TP": 4,
+      "FN": 0,
+      "TN": 0,
+      "FP": 14
+    },
+    "4": {
+      "count": 33,
+      "gate": ">= threshold",
+      "TP": 16,
+      "FN": 0,
+      "TN": 0,
+      "FP": 17
+    },
+    "6": {
+      "count": 42,
+      "gate": ">= threshold",
+      "TP": 39,
+      "FN": 0,
+      "TN": 0,
+      "FP": 3
+    }
+  },
+  "fp_signal_patterns": {
+    "amount+currency": 16,
+    "verb": 8,
+    "amount+currency+verb+negative": 4,
+    "amount+currency+verb": 3,
+    "amount": 2,
+    "currency+verb": 1
+  },
+  "fp_root_causes": {
+    "amount_currency_no_verb_no_negative": [
+      {
+        "index": 21,
+        "message": "500",
+        "score": 2,
+        "description": "Amount only \u2014 no verb, no currency, insufficient context"
+      },
+      {
+        "index": 22,
+        "message": "ZMW 1000",
+        "score": 4,
+        "description": "Currency and amount only \u2014 no verb or transaction context"
+      },
+      {
+        "index": 46,
+        "message": "3 guards reported today",
+        "score": 2,
+        "description": "Operational status \u2014 number present but no currency or verb"
+      },
+      {
+        "index": 50,
+        "message": "1000 ZMW",
+        "score": 4,
+        "description": "Amount and currency only \u2014 no verb to indicate actual transaction"
+      },
+      {
+        "index": 107,
+        "message": "please send the 1200 ZMW today",
+        "score": 4,
+        "description": "Instruction to send \u2014 imperative, no confirmed transaction"
+      },
+      {
+        "index": 110,
+        "message": "let",
+        "score": 4,
+        "description": ""
+      },
+      {
+        "index": 111,
+        "message": "remind me to pay the 400 ZMW tomorrow",
+        "score": 4,
+        "description": "Reminder instruction \u2014 future payment, not a completed transaction"
+      },
+      {
+        "index": 115,
+        "message": "he owes the company 5000 ZMW",
+        "score": 4,
+        "description": "Third-party debt statement \u2014 owe triggers negative context"
+      },
+      {
+        "index": 119,
+        "message": "estimate is around 2000 ZMW",
+        "score": 4,
+        "description": "Cost estimate \u2014 no verb, no confirmed transaction"
+      },
+      {
+        "index": 120,
+        "message": "budget for the event is 8000 ZMW",
+        "score": 4,
+        "description": "Budget statement \u2014 no transaction verb or completed action"
+      },
+      {
+        "index": 121,
+        "message": "the price is 350 ZMW per unit",
+        "score": 4,
+        "description": "Pricing statement \u2014 no transaction verb"
+      },
+      {
+        "index": 122,
+        "message": "salary is 6500 ZMW per month",
+        "score": 4,
+        "description": "Compensation disclosure \u2014 no verb, not a completed transaction"
+      },
+      {
+        "index": 133,
+        "message": "if you pay 500 ZMW now you get a discount",
+        "score": 4,
+        "description": "Conditional offer \u2014 if framing means no completed transaction"
+      },
+      {
+        "index": 134,
+        "message": "once you send 1200 ZMW we will proceed",
+        "score": 4,
+        "description": "Conditional instruction \u2014 once you framing, transaction not yet completed"
+      },
+      {
+        "index": 135,
+        "message": "normally we charge 800 ZMW for this",
+        "score": 4,
+        "description": "Pricing norm \u2014 no completed transaction, just rate disclosure"
+      },
+      {
+        "index": 138,
+        "message": "the invoice total comes to 3400 ZMW",
+        "score": 4,
+        "description": "Invoice summary \u2014 amount and currency present but no transaction verb"
+      },
+      {
+        "index": 139,
+        "message": "total cost is 2200 ZMW including delivery",
+        "score": 4,
+        "description": "Cost breakdown \u2014 no transaction verb, just a total"
+      },
+      {
+        "index": 140,
+        "message": "we need to collect 10000 ZMW by end of month",
+        "score": 4,
+        "description": "Collection target \u2014 future goal, no completed transaction"
+      }
+    ],
+    "negative_context_penalty_insufficient": [
+      {
+        "index": 27,
+        "message": "Planning to transfer 5000 ZMW next week",
+        "score": 2,
+        "description": "Future intent \u2014 planning to phrase triggers negative context"
+      },
+      {
+        "index": 28,
+        "message": "Maybe transfer the 300 ZMW later",
+        "score": 2,
+        "description": "Uncertain future intent \u2014 maybe transfer triggers negative context"
+      },
+      {
+        "index": 100,
+        "message": "have you received the 1000 ZMW?",
+        "score": 2,
+        "description": "Verification question with amount and currency \u2014 question mark triggers negative"
+      },
+      {
+        "index": 105,
+        "message": "did you get the 300 ZMW I sent?",
+        "score": 2,
+        "description": "Confirmation question referencing a prior transaction \u2014 question mark triggers"
+      }
+    ],
+    "verb_only_no_amount_no_currency": [
+      {
+        "index": 48,
+        "message": "Received",
+        "score": 2,
+        "description": "Verb only \u2014 no amount, no currency, insufficient context"
+      },
+      {
+        "index": 49,
+        "message": "Paid",
+        "score": 2,
+        "description": "Verb only \u2014 no amount, no currency"
+      },
+      {
+        "index": 94,
+        "message": "maybe I will transfer it on Monday",
+        "score": 2,
+        "description": "Uncertain future intent \u2014 maybe plus will triggers negative context"
+      },
+      {
+        "index": 108,
+        "message": "make sure to transfer the money before noon",
+        "score": 2,
+        "description": "Instruction \u2014 no amount, no completed transfer"
+      },
+      {
+        "index": 124,
+        "message": "payment not received yet",
+        "score": 2,
+        "description": "Negative confirmation \u2014 no amount, no completed credit"
+      },
+      {
+        "index": 125,
+        "message": "the transfer is pending",
+        "score": 2,
+        "description": "Status message \u2014 no amount, no completed debit"
+      },
+      {
+        "index": 127,
+        "message": "money not yet received",
+        "score": 2,
+        "description": "Negative state \u2014 no amount, no confirmed credit"
+      },
+      {
+        "index": 129,
+        "message": "I never got the refund",
+        "score": 2,
+        "description": "Negated credit \u2014 got verb but negated, no amount"
+      }
+    ],
+    "verb_amount_currency_missing_contextual_guard": [
+      {
+        "index": 51,
+        "message": "Sent ZMW yesterday",
+        "score": 4,
+        "description": "Verb and date but no amount \u2014 incomplete transaction signal"
+      },
+      {
+        "index": 130,
+        "message": "I heard you received 5000 ZMW",
+        "score": 6,
+        "description": "Reported speech about someone else's transaction \u2014 not a record of a completed transaction"
+      },
+      {
+        "index": 131,
+        "message": "they said he paid 1000 ZMW already",
+        "score": 6,
+        "description": "Third-party reported payment \u2014 gossip framing, not a direct transaction record"
+      },
+      {
+        "index": 132,
+        "message": "apparently 2000 ZMW was transferred",
+        "score": 6,
+        "description": "Hearsay passive \u2014 apparently qualifies the reported transfer"
+      }
+    ]
+  },
+  "false_positives": [
+    {
+      "index": 21,
+      "message": "500",
+      "score": 2,
+      "description": "Amount only \u2014 no verb, no currency, insufficient context"
+    },
+    {
+      "index": 22,
+      "message": "ZMW 1000",
+      "score": 4,
+      "description": "Currency and amount only \u2014 no verb or transaction context"
+    },
+    {
+      "index": 27,
+      "message": "Planning to transfer 5000 ZMW next week",
+      "score": 2,
+      "description": "Future intent \u2014 planning to phrase triggers negative context"
+    },
+    {
+      "index": 28,
+      "message": "Maybe transfer the 300 ZMW later",
+      "score": 2,
+      "description": "Uncertain future intent \u2014 maybe transfer triggers negative context"
+    },
+    {
+      "index": 46,
+      "message": "3 guards reported today",
+      "score": 2,
+      "description": "Operational status \u2014 number present but no currency or verb"
+    },
+    {
+      "index": 48,
+      "message": "Received",
+      "score": 2,
+      "description": "Verb only \u2014 no amount, no currency, insufficient context"
+    },
+    {
+      "index": 49,
+      "message": "Paid",
+      "score": 2,
+      "description": "Verb only \u2014 no amount, no currency"
+    },
+    {
+      "index": 50,
+      "message": "1000 ZMW",
+      "score": 4,
+      "description": "Amount and currency only \u2014 no verb to indicate actual transaction"
+    },
+    {
+      "index": 51,
+      "message": "Sent ZMW yesterday",
+      "score": 4,
+      "description": "Verb and date but no amount \u2014 incomplete transaction signal"
+    },
+    {
+      "index": 94,
+      "message": "maybe I will transfer it on Monday",
+      "score": 2,
+      "description": "Uncertain future intent \u2014 maybe plus will triggers negative context"
+    },
+    {
+      "index": 100,
+      "message": "have you received the 1000 ZMW?",
+      "score": 2,
+      "description": "Verification question with amount and currency \u2014 question mark triggers negative"
+    },
+    {
+      "index": 105,
+      "message": "did you get the 300 ZMW I sent?",
+      "score": 2,
+      "description": "Confirmation question referencing a prior transaction \u2014 question mark triggers"
+    },
+    {
+      "index": 107,
+      "message": "please send the 1200 ZMW today",
+      "score": 4,
+      "description": "Instruction to send \u2014 imperative, no confirmed transaction"
+    },
+    {
+      "index": 108,
+      "message": "make sure to transfer the money before noon",
+      "score": 2,
+      "description": "Instruction \u2014 no amount, no completed transfer"
+    },
+    {
+      "index": 110,
+      "message": "let",
+      "score": 4,
+      "description": ""
+    },
+    {
+      "index": 111,
+      "message": "remind me to pay the 400 ZMW tomorrow",
+      "score": 4,
+      "description": "Reminder instruction \u2014 future payment, not a completed transaction"
+    },
+    {
+      "index": 115,
+      "message": "he owes the company 5000 ZMW",
+      "score": 4,
+      "description": "Third-party debt statement \u2014 owe triggers negative context"
+    },
+    {
+      "index": 119,
+      "message": "estimate is around 2000 ZMW",
+      "score": 4,
+      "description": "Cost estimate \u2014 no verb, no confirmed transaction"
+    },
+    {
+      "index": 120,
+      "message": "budget for the event is 8000 ZMW",
+      "score": 4,
+      "description": "Budget statement \u2014 no transaction verb or completed action"
+    },
+    {
+      "index": 121,
+      "message": "the price is 350 ZMW per unit",
+      "score": 4,
+      "description": "Pricing statement \u2014 no transaction verb"
+    },
+    {
+      "index": 122,
+      "message": "salary is 6500 ZMW per month",
+      "score": 4,
+      "description": "Compensation disclosure \u2014 no verb, not a completed transaction"
+    },
+    {
+      "index": 124,
+      "message": "payment not received yet",
+      "score": 2,
+      "description": "Negative confirmation \u2014 no amount, no completed credit"
+    },
+    {
+      "index": 125,
+      "message": "the transfer is pending",
+      "score": 2,
+      "description": "Status message \u2014 no amount, no completed debit"
+    },
+    {
+      "index": 127,
+      "message": "money not yet received",
+      "score": 2,
+      "description": "Negative state \u2014 no amount, no confirmed credit"
+    },
+    {
+      "index": 129,
+      "message": "I never got the refund",
+      "score": 2,
+      "description": "Negated credit \u2014 got verb but negated, no amount"
+    },
+    {
+      "index": 130,
+      "message": "I heard you received 5000 ZMW",
+      "score": 6,
+      "description": "Reported speech about someone else's transaction \u2014 not a record of a completed transaction"
+    },
+    {
+      "index": 131,
+      "message": "they said he paid 1000 ZMW already",
+      "score": 6,
+      "description": "Third-party reported payment \u2014 gossip framing, not a direct transaction record"
+    },
+    {
+      "index": 132,
+      "message": "apparently 2000 ZMW was transferred",
+      "score": 6,
+      "description": "Hearsay passive \u2014 apparently qualifies the reported transfer"
+    },
+    {
+      "index": 133,
+      "message": "if you pay 500 ZMW now you get a discount",
+      "score": 4,
+      "description": "Conditional offer \u2014 if framing means no completed transaction"
+    },
+    {
+      "index": 134,
+      "message": "once you send 1200 ZMW we will proceed",
+      "score": 4,
+      "description": "Conditional instruction \u2014 once you framing, transaction not yet completed"
+    },
+    {
+      "index": 135,
+      "message": "normally we charge 800 ZMW for this",
+      "score": 4,
+      "description": "Pricing norm \u2014 no completed transaction, just rate disclosure"
+    },
+    {
+      "index": 138,
+      "message": "the invoice total comes to 3400 ZMW",
+      "score": 4,
+      "description": "Invoice summary \u2014 amount and currency present but no transaction verb"
+    },
+    {
+      "index": 139,
+      "message": "total cost is 2200 ZMW including delivery",
+      "score": 4,
+      "description": "Cost breakdown \u2014 no transaction verb, just a total"
+    },
+    {
+      "index": 140,
+      "message": "we need to collect 10000 ZMW by end of month",
+      "score": 4,
+      "description": "Collection target \u2014 future goal, no completed transaction"
+    }
+  ],
+  "false_negatives": []
+}

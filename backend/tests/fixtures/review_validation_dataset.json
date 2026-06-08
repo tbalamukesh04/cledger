@@ -1,0 +1,93 @@
+[
+  {
+    "id": "rev_01",
+    "description": "Correcting amount and currency on mixed-currency extraction",
+    "payload": "Paid 50 USD which is like 1200 ZMW to the vendor.",
+    "initial_state": {
+      "status": "review_needed",
+      "amount": 50.00,
+      "currency": "USD",
+      "txn_type": "debit"
+    },
+    "review_action": {
+      "action": "correct",
+      "corrected_fields": {
+        "amount": 1200.00,
+        "currency": "ZMW"
+      },
+      "reason": "Normalized to local currency equivalent per user intent"
+    },
+    "expected_outcome": {
+      "final_status": "corrected",
+      "audit_action_logged": "UPDATE",
+      "mobile_sync_status": "CORRECTED"
+    }
+  },
+  {
+    "id": "rev_02",
+    "description": "Correcting transaction direction on ambiguous phrasing",
+    "payload": "Wait, cancel that last payment of 100 ZMW, it was actually 150 ZMW.",
+    "initial_state": {
+      "status": "review_needed",
+      "amount": 100.00,
+      "currency": "ZMW",
+      "txn_type": "credit"
+    },
+    "review_action": {
+      "action": "correct",
+      "corrected_fields": {
+        "amount": 150.00,
+        "txn_type": "debit"
+      },
+      "reason": "Corrected amount and fixed misclassified credit to debit"
+    },
+    "expected_outcome": {
+      "final_status": "corrected",
+      "audit_action_logged": "UPDATE",
+      "mobile_sync_status": "CORRECTED"
+    }
+  },
+  {
+    "id": "rev_03",
+    "description": "Invalidating false-positive financial extraction",
+    "payload": "My account balance is now 5000 ZMW.",
+    "initial_state": {
+      "status": "review_needed",
+      "amount": 5000.00,
+      "currency": "ZMW",
+      "txn_type": "credit"
+    },
+    "review_action": {
+      "action": "invalidate",
+      "reason": "Statement of account balance, not a discrete transactional event"
+    },
+    "expected_outcome": {
+      "final_status": "invalidated",
+      "audit_action_logged": "INVALIDATE",
+      "mobile_sync_status": "INVALIDATED"
+    }
+  },
+  {
+    "id": "rev_04",
+    "description": "Correcting missing date context on fallback",
+    "payload": "Spent 450 ZMW at the hardware store.",
+    "initial_state": {
+      "status": "review_needed",
+      "amount": 450.00,
+      "currency": "ZMW",
+      "txn_type": "debit"
+    },
+    "review_action": {
+      "action": "correct",
+      "corrected_fields": {
+        "remarks": "Hardware store supplies - pending invoice"
+      },
+      "reason": "Appended contextual remarks missing from AI extraction"
+    },
+    "expected_outcome": {
+      "final_status": "corrected",
+      "audit_action_logged": "UPDATE",
+      "mobile_sync_status": "CORRECTED"
+    }
+  }
+]

@@ -1,0 +1,407 @@
+====================================================================================================
+CLASSIFIER EVALUATION REPORT
+Run ID    : 20260319174538
+Generated : 2026-03-19T17:45:38.366228+00:00
+Dataset   : C:\Projects\cledger\backend\tests\classifier_eval_dataset.json
+Weights   : {'amount_detected': 2, 'currency_detected': 2, 'transaction_verb_detected': 2, 'negative_context': -4}
+Threshold : 2
+Total entries : 140
+====================================================================================================
+
+SUMMARY METRICS
+----------------------------------------------------------------------------------------------------
+  Accuracy                  0.7571   (106/140 correct)
+  Precision                 0.6344   (TP / (TP+FP))   — of predicted transactions, how many are real
+  Recall (Sensitivity)      1.0000   (TP / (TP+FN))   — of real transactions, how many were caught
+  Specificity               0.5802   (TN / (TN+FP))   — of real non-transactions, how many were blocked
+  F1 Score                  0.7763   (harmonic mean of precision and recall)
+
+CONFUSION MATRIX
+----------------------------------------------------------------------------------------------------
+                                       Predicted: transaction   Predicted: non_transaction
+  Actual: transaction                         TP = 59                     FN = 0          
+  Actual: non_transaction                     FP = 34                    TN = 47          
+
+CLASS BREAKDOWN
+----------------------------------------------------------------------------------------------------
+  Transaction entries in dataset     : 59
+    Correctly classified  (TP)       : 59
+    Missed — False Neg    (FN)       : 0
+  Non-transaction entries in dataset : 81
+    Correctly blocked     (TN)       : 47
+    Passed through — FP              : 34
+
+====================================================================================================
+FALSE POSITIVES  (34)  — expected non_transaction, classified as transaction
+  These messages were incorrectly routed to AI extraction.
+----------------------------------------------------------------------------------------------------
+  [ 21] "500"
+        score=2  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 0, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=False  verb=False  negative_context=False
+        description: Amount only — no verb, no currency, insufficient context
+
+  [ 22] "ZMW 1000"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Currency and amount only — no verb or transaction context
+
+  [ 27] "Planning to transfer 5000 ZMW next week"
+        score=2  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': -4}
+        signals    : amount=True  currency=True  verb=True  negative_context=True
+        description: Future intent — planning to phrase triggers negative context
+
+  [ 28] "Maybe transfer the 300 ZMW later"
+        score=2  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': -4}
+        signals    : amount=True  currency=True  verb=True  negative_context=True
+        description: Uncertain future intent — maybe transfer triggers negative context
+
+  [ 46] "3 guards reported today"
+        score=2  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 0, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=False  verb=False  negative_context=False
+        description: Operational status — number present but no currency or verb
+
+  [ 48] "Received"
+        score=2  threshold=2
+        breakdown  : {'amount_detected': 0, 'currency_detected': 0, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': 0}
+        signals    : amount=False  currency=False  verb=True  negative_context=False
+        description: Verb only — no amount, no currency, insufficient context
+
+  [ 49] "Paid"
+        score=2  threshold=2
+        breakdown  : {'amount_detected': 0, 'currency_detected': 0, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': 0}
+        signals    : amount=False  currency=False  verb=True  negative_context=False
+        description: Verb only — no amount, no currency
+
+  [ 50] "1000 ZMW"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Amount and currency only — no verb to indicate actual transaction
+
+  [ 51] "Sent ZMW yesterday"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 0, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': 0}
+        signals    : amount=False  currency=True  verb=True  negative_context=False
+        description: Verb and date but no amount — incomplete transaction signal
+
+  [ 94] "maybe I will transfer it on Monday"
+        score=2  threshold=2
+        breakdown  : {'amount_detected': 0, 'currency_detected': 0, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': 0}
+        signals    : amount=False  currency=False  verb=True  negative_context=False
+        description: Uncertain future intent — maybe plus will triggers negative context
+
+  [100] "have you received the 1000 ZMW?"
+        score=2  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': -4}
+        signals    : amount=True  currency=True  verb=True  negative_context=True
+        description: Verification question with amount and currency — question mark triggers negative
+
+  [105] "did you get the 300 ZMW I sent?"
+        score=2  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': -4}
+        signals    : amount=True  currency=True  verb=True  negative_context=True
+        description: Confirmation question referencing a prior transaction — question mark triggers
+
+  [107] "please send the 1200 ZMW today"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Instruction to send — imperative, no confirmed transaction
+
+  [108] "make sure to transfer the money before noon"
+        score=2  threshold=2
+        breakdown  : {'amount_detected': 0, 'currency_detected': 0, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': 0}
+        signals    : amount=False  currency=False  verb=True  negative_context=False
+        description: Instruction — no amount, no completed transfer
+
+  [110] "let's split the 600 ZMW equally"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Cost-sharing proposal with amount and currency — no completed verb
+
+  [111] "remind me to pay the 400 ZMW tomorrow"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Reminder instruction — future payment, not a completed transaction
+
+  [115] "he owes the company 5000 ZMW"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Third-party debt statement — owe triggers negative context
+
+  [119] "estimate is around 2000 ZMW"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Cost estimate — no verb, no confirmed transaction
+
+  [120] "budget for the event is 8000 ZMW"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Budget statement — no transaction verb or completed action
+
+  [121] "the price is 350 ZMW per unit"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Pricing statement — no transaction verb
+
+  [122] "salary is 6500 ZMW per month"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Compensation disclosure — no verb, not a completed transaction
+
+  [124] "payment not received yet"
+        score=2  threshold=2
+        breakdown  : {'amount_detected': 0, 'currency_detected': 0, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': 0}
+        signals    : amount=False  currency=False  verb=True  negative_context=False
+        description: Negative confirmation — no amount, no completed credit
+
+  [125] "the transfer is pending"
+        score=2  threshold=2
+        breakdown  : {'amount_detected': 0, 'currency_detected': 0, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': 0}
+        signals    : amount=False  currency=False  verb=True  negative_context=False
+        description: Status message — no amount, no completed debit
+
+  [127] "money not yet received"
+        score=2  threshold=2
+        breakdown  : {'amount_detected': 0, 'currency_detected': 0, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': 0}
+        signals    : amount=False  currency=False  verb=True  negative_context=False
+        description: Negative state — no amount, no confirmed credit
+
+  [129] "I never got the refund"
+        score=2  threshold=2
+        breakdown  : {'amount_detected': 0, 'currency_detected': 0, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': 0}
+        signals    : amount=False  currency=False  verb=True  negative_context=False
+        description: Negated credit — got verb but negated, no amount
+
+  [130] "I heard you received 5000 ZMW"
+        score=6  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=True  negative_context=False
+        description: Reported speech about someone else's transaction — not a record of a completed transaction
+
+  [131] "they said he paid 1000 ZMW already"
+        score=6  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=True  negative_context=False
+        description: Third-party reported payment — gossip framing, not a direct transaction record
+
+  [132] "apparently 2000 ZMW was transferred"
+        score=6  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 2, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=True  negative_context=False
+        description: Hearsay passive — apparently qualifies the reported transfer
+
+  [133] "if you pay 500 ZMW now you get a discount"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Conditional offer — if framing means no completed transaction
+
+  [134] "once you send 1200 ZMW we will proceed"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Conditional instruction — once you framing, transaction not yet completed
+
+  [135] "normally we charge 800 ZMW for this"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Pricing norm — no completed transaction, just rate disclosure
+
+  [138] "the invoice total comes to 3400 ZMW"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Invoice summary — amount and currency present but no transaction verb
+
+  [139] "total cost is 2200 ZMW including delivery"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Cost breakdown — no transaction verb, just a total
+
+  [140] "we need to collect 10000 ZMW by end of month"
+        score=4  threshold=2
+        breakdown  : {'amount_detected': 2, 'currency_detected': 2, 'date_detected': 0, 'transaction_verb_detected': 0, 'negative_context': 0}
+        signals    : amount=True  currency=True  verb=False  negative_context=False
+        description: Collection target — future goal, no completed transaction
+
+====================================================================================================
+FALSE NEGATIVES  (0)  — expected transaction, classified as non_transaction
+  These messages were incorrectly blocked from AI extraction.
+----------------------------------------------------------------------------------------------------
+  None
+
+====================================================================================================
+SCORE DISTRIBUTION
+----------------------------------------------------------------------------------------------------
+   Score  Count            Gate    TP    FN    TN    FP
+----------------------------------------------------------------------------------------------------
+      -4     10     < threshold     0     0    10     0
+      -2      4     < threshold     0     0     4     0
+       0     33     < threshold     0     0    33     0
+       2     18    >= threshold     4     0     0    14
+       4     33    >= threshold    16     0     0    17
+       6     42    >= threshold    39     0     0     3
+
+====================================================================================================
+FULL PER-ENTRY BREAKDOWN
+----------------------------------------------------------------------------------------------------
+    #  Expected         Predicted        Result  Score  Neg  Verb  Amt  Curr  Message
+----------------------------------------------------------------------------------------------------
+    1  transaction      transaction          OK      6    n     Y    Y     Y  'Received 500 ZMW from James'
+    2  transaction      transaction          OK      6    n     Y    Y     Y  'Paid 1200 ZMW for groceries'
+    3  transaction      transaction          OK      6    n     Y    Y     Y  'Sent 750 kwacha to the supplier'
+    4  transaction      transaction          OK      4    n     Y    Y     n  'Got 2000 from Mulenga today'
+    5  transaction      transaction          OK      2    n     Y    n     n  'Transferred K500 to Mary yesterday'
+    6  transaction      transaction          OK      4    n     n    Y     Y  'Withdrew 3000 ZMW from the ATM'
+    7  transaction      transaction          OK      4    n     n    Y     Y  'Deposited 10000 ZMW into the account'
+    8  transaction      transaction          OK      6    n     Y    Y     Y  'Bought fuel worth 450 ZMW'
+    9  transaction      transaction          OK      4    n     n    Y     Y  'Refunded 200 ZMW to the customer'
+   10  transaction      transaction          OK      6    n     Y    Y     Y  'Gave James 1500 ZMW for the repairs'
+   11  transaction      transaction          OK      6    n     Y    Y     Y  'Paid 3 guards 2200 ZMW each this month'
+   12  transaction      transaction          OK      6    n     Y    Y     Y  'Received USD 300 from the London office'
+   13  transaction      transaction          OK      6    n     Y    Y     Y  'Sent $150 to the vendor'
+   14  transaction      transaction          OK      6    n     Y    Y     Y  'Spent 800 ZMW on transport last week'
+   15  transaction      transaction          OK      4    n     n    Y     Y  "Credited 5000 ZMW to John's account on Monday"
+   16  transaction      transaction          OK      4    n     n    Y     Y  'Debited 900 ZMW from account for January rent'
+   17  transaction      transaction          OK      4    n     n    Y     Y  'Repaid 2500 ZMW loan installment'
+   18  transaction      transaction          OK      6    n     Y    Y     Y  'Received reimbursement of 350 ZMW from HR'
+   19  transaction      transaction          OK      6    n     Y    Y     Y  'Transfer of 7500 ZMK completed'
+   20  transaction      transaction          OK      2    n     Y    n     n  '500K received from supplier'
+   21  non_transaction  transaction        FAIL      2    n     n    Y     n  '500'
+   22  non_transaction  transaction        FAIL      4    n     n    Y     Y  'ZMW 1000'
+   23  non_transaction  non_transaction      OK     -4    Y     n    n     n  'How much did you send?'
+   24  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'Did you receive the 500 ZMW?'
+   25  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'Should I pay the 1000 ZMW now?'
+   26  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'Will send 2000 ZMW tomorrow'
+   27  non_transaction  transaction        FAIL      2    Y     Y    Y     Y  'Planning to transfer 5000 ZMW next week'
+   28  non_transaction  transaction        FAIL      2    Y     Y    Y     Y  'Maybe transfer the 300 ZMW later'
+   29  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'You owe me 400 ZMW'
+   30  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'Can you send 1500 ZMW to James?'
+   31  non_transaction  non_transaction      OK     -4    Y     n    n     n  'What is the balance?'
+   32  non_transaction  non_transaction      OK     -2    Y     n    n     Y  'What is my current balance ZMW?'
+   33  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'Going to pay 600 ZMW on Friday'
+   34  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'He should pay the remaining 250 ZMW'
+   35  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'Quote for 3 security guards is 6600 ZMW per month'
+   36  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'How much is 500 ZMW in USD?'
+   37  non_transaction  non_transaction      OK      0    n     n    n     n  'Good morning everyone'
+   38  non_transaction  non_transaction      OK      0    n     n    n     n  'Meeting at 3pm today'
+   39  non_transaction  non_transaction      OK      0    n     n    n     n  'Please confirm receipt'
+   40  non_transaction  non_transaction      OK      0    n     n    n     n  'OK'
+   41  non_transaction  non_transaction      OK      0    n     n    n     n  'Thanks for the update'
+   42  non_transaction  non_transaction      OK      0    n     n    n     n  'The invoice is attached'
+   43  non_transaction  non_transaction      OK      0    n     n    n     n  'Stock delivered today'
+   44  non_transaction  non_transaction      OK      0    n     n    n     n  'Call me when you are free'
+   45  non_transaction  non_transaction      OK      0    n     n    n     n  'See you tomorrow at the office'
+   46  non_transaction  transaction        FAIL      2    n     n    Y     n  '3 guards reported today'
+   47  transaction      transaction          OK      2    n     n    Y     n  '2200 per month (2 guards)'
+   48  non_transaction  transaction        FAIL      2    n     Y    n     n  'Received'
+   49  non_transaction  transaction        FAIL      2    n     Y    n     n  'Paid'
+   50  non_transaction  transaction        FAIL      4    n     n    Y     Y  '1000 ZMW'
+   51  non_transaction  transaction        FAIL      4    n     Y    n     Y  'Sent ZMW yesterday'
+   52  transaction      transaction          OK      6    n     Y    Y     Y  'Paid 500 ZMW but will need to send 1000 ZMW more later'
+   53  transaction      transaction          OK      2    Y     Y    Y     Y  'Received 300 ZMW. Should I deposit it?'
+   54  transaction      transaction          OK      4    n     Y    Y     n  'paid rahul 500'
+   55  transaction      transaction          OK      4    n     Y    Y     n  'sent 1200 to aman'
+   56  transaction      transaction          OK      4    n     Y    Y     n  'received 200 from john yesterday'
+   57  transaction      transaction          OK      4    n     Y    Y     n  'transferred 1500 for rent'
+   58  transaction      transaction          OK      4    n     Y    Y     n  'sent ₹1200 to aman'
+   59  transaction      transaction          OK      6    n     Y    Y     Y  'paid £80 for the ticket'
+   60  transaction      transaction          OK      6    n     Y    Y     Y  'received €250 from the client'
+   61  transaction      transaction          OK      6    n     Y    Y     Y  'got $45 back from the refund'
+   62  transaction      transaction          OK      4    n     Y    n     Y  'paid him five hundred ZMW'
+   63  transaction      transaction          OK      6    n     Y    Y     Y  'sent about 300 ZMW'
+   64  transaction      transaction          OK      6    n     Y    Y     Y  'paid roughly 1000 ZMW for the event'
+   65  transaction      transaction          OK      6    n     Y    Y     Y  '1500 ZMW was transferred to the account'
+   66  transaction      transaction          OK      6    n     Y    Y     Y  '2000 ZMW received from Peter'
+   67  transaction      transaction          OK      6    n     Y    Y     Y  '850 ZMW paid for the permit'
+   68  transaction      transaction          OK      6    n     Y    Y     Y  'The rent of 3500 ZMW was paid'
+   69  transaction      transaction          OK      6    n     Y    Y     Y  'School fees 1200 ZMW sent today'
+   70  transaction      transaction          OK      6    n     Y    Y     Y  'Fuel - 400 ZMW Transport - 150 ZMW Total paid today'
+   71  transaction      transaction          OK      6    n     Y    Y     Y  'Received payment 2750 ZMW From: David'
+   72  transaction      transaction          OK      4    n     n    Y     Y  'pd 600 zmw supplier'
+   73  transaction      transaction          OK      4    n     n    Y     Y  'rcvd 1000 ZMW frm James'
+   74  transaction      transaction          OK      4    n     n    Y     Y  'txfr 5000 ZMW done'
+   75  transaction      transaction          OK      6    n     Y    Y     Y  'PAID 700 ZMW FOR SUPPLIES'
+   76  transaction      transaction          OK      6    n     Y    Y     Y  'RECEIVED 3000 ZMW FROM HEAD OFFICE'
+   77  transaction      transaction          OK      6    n     Y    Y     Y  'Paid 1250.50 ZMW for materials'
+   78  transaction      transaction          OK      6    n     Y    Y     Y  'Received 99.99 ZMW from the app'
+   79  transaction      transaction          OK      6    n     Y    Y     Y  'Transferred 250000 ZMW to the contractor'
+   80  transaction      transaction          OK      6    n     Y    Y     Y  'Received 1500000 ZMW from the investor'
+   81  transaction      transaction          OK      6    n     Y    Y     Y  'sent 500 ZMW'
+   82  transaction      transaction          OK      6    n     Y    Y     Y  'got 200 ZMW'
+   83  transaction      transaction          OK      6    n     Y    Y     Y  'paid 50 dollars'
+   84  transaction      transaction          OK      6    n     Y    Y     Y  'Paid 800 ZMW on Wednesday'
+   85  transaction      transaction          OK      6    n     Y    Y     Y  'Received 2200 ZMW in March'
+   86  transaction      transaction          OK      6    n     Y    Y     Y  'Transferred 4500 ZMW on the 15th'
+   87  transaction      transaction          OK      6    n     Y    Y     Y  'Paid James 600 ZMW for fixing the gate'
+   88  transaction      transaction          OK      6    n     Y    Y     Y  'Received 1800 ZMW from Grace for the deposit'
+   89  transaction      transaction          OK      6    n     Y    Y     Y  'Sent 320 ZMW airtime to the team'
+   90  non_transaction  non_transaction      OK     -4    Y     n    n     n  'should pay him tomorrow'
+   91  non_transaction  non_transaction      OK     -4    Y     n    n     n  'will pay you back on Friday'
+   92  non_transaction  non_transaction      OK     -2    Y     Y    n     n  'planning to transfer next week'
+   93  non_transaction  non_transaction      OK     -4    Y     n    n     n  'going to send the money later today'
+   94  non_transaction  transaction        FAIL      2    n     Y    n     n  'maybe I will transfer it on Monday'
+   95  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'I will send the 500 ZMW once confirmed'
+   96  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'planning to pay the 2000 ZMW rent next month'
+   97  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'going to pay 800 ZMW for the service tomorrow'
+   98  non_transaction  non_transaction      OK     -4    Y     n    n     n  'did you send the money'
+   99  non_transaction  non_transaction      OK     -4    Y     n    n     n  'did you send the money?'
+  100  non_transaction  transaction        FAIL      2    Y     Y    Y     Y  'have you received the 1000 ZMW?'
+  101  non_transaction  non_transaction      OK     -2    Y     Y    n     n  'has the transfer gone through?'
+  102  non_transaction  non_transaction      OK     -4    Y     n    n     n  'when did you pay?'
+  103  non_transaction  non_transaction      OK     -4    Y     n    n     n  'how much did it cost?'
+  104  non_transaction  non_transaction      OK     -4    Y     n    n     n  'how much should I send?'
+  105  non_transaction  transaction        FAIL      2    Y     Y    Y     Y  'did you get the 300 ZMW I sent?'
+  106  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'can you send me 500 ZMW please'
+  107  non_transaction  transaction        FAIL      4    n     n    Y     Y  'please send the 1200 ZMW today'
+  108  non_transaction  transaction        FAIL      2    n     Y    n     n  'make sure to transfer the money before noon'
+  109  non_transaction  non_transaction      OK      0    n     n    n     n  "let's split the bill"
+  110  non_transaction  transaction        FAIL      4    n     n    Y     Y  "let's split the 600 ZMW equally"
+  111  non_transaction  transaction        FAIL      4    n     n    Y     Y  'remind me to pay the 400 ZMW tomorrow'
+  112  non_transaction  non_transaction      OK     -2    Y     Y    n     n  'can you confirm the payment was received?'
+  113  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'you still owe me 700 ZMW'
+  114  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'I owe Grace 1500 ZMW for last month'
+  115  non_transaction  transaction        FAIL      4    n     n    Y     Y  'he owes the company 5000 ZMW'
+  116  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'the remaining balance is 3200 ZMW'
+  117  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'current balance: 12500 ZMW'
+  118  non_transaction  non_transaction      OK      0    Y     n    Y     Y  'the quote for painting is 4500 ZMW'
+  119  non_transaction  transaction        FAIL      4    n     n    Y     Y  'estimate is around 2000 ZMW'
+  120  non_transaction  transaction        FAIL      4    n     n    Y     Y  'budget for the event is 8000 ZMW'
+  121  non_transaction  transaction        FAIL      4    n     n    Y     Y  'the price is 350 ZMW per unit'
+  122  non_transaction  transaction        FAIL      4    n     n    Y     Y  'salary is 6500 ZMW per month'
+  123  non_transaction  non_transaction      OK      0    n     n    n     n  'the transaction failed'
+  124  non_transaction  transaction        FAIL      2    n     Y    n     n  'payment not received yet'
+  125  non_transaction  transaction        FAIL      2    n     Y    n     n  'the transfer is pending'
+  126  non_transaction  non_transaction      OK      0    n     n    n     n  'waiting for the money to clear'
+  127  non_transaction  transaction        FAIL      2    n     Y    n     n  'money not yet received'
+  128  non_transaction  non_transaction      OK      0    n     n    n     n  'payment is overdue'
+  129  non_transaction  transaction        FAIL      2    n     Y    n     n  'I never got the refund'
+  130  non_transaction  transaction        FAIL      6    n     Y    Y     Y  'I heard you received 5000 ZMW'
+  131  non_transaction  transaction        FAIL      6    n     Y    Y     Y  'they said he paid 1000 ZMW already'
+  132  non_transaction  transaction        FAIL      6    n     Y    Y     Y  'apparently 2000 ZMW was transferred'
+  133  non_transaction  transaction        FAIL      4    n     n    Y     Y  'if you pay 500 ZMW now you get a discount'
+  134  non_transaction  transaction        FAIL      4    n     n    Y     Y  'once you send 1200 ZMW we will proceed'
+  135  non_transaction  transaction        FAIL      4    n     n    Y     Y  'normally we charge 800 ZMW for this'
+  136  non_transaction  non_transaction      OK      0    n     n    n     n  'let me check the account first'
+  137  non_transaction  non_transaction      OK      0    n     n    n     n  "I'll confirm the amount and send later"
+  138  non_transaction  transaction        FAIL      4    n     n    Y     Y  'the invoice total comes to 3400 ZMW'
+  139  non_transaction  transaction        FAIL      4    n     n    Y     Y  'total cost is 2200 ZMW including delivery'
+  140  non_transaction  transaction        FAIL      4    n     n    Y     Y  'we need to collect 10000 ZMW by end of month'
+====================================================================================================
+END OF REPORT
+====================================================================================================
