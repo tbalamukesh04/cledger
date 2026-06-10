@@ -1,6 +1,6 @@
 from decimal import Decimal
 from typing import Optional
-from sqlalchemy import String, Text, Integer, Numeric
+from sqlalchemy import String, Text, Integer, Numeric, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
@@ -8,10 +8,11 @@ class Participants(Base, TimestampMixin):
     __tablename__ = "participants"
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True, primary_key=True)
-    tenant_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    tenant_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("businesses.id", ondelete="RESTRICT"), nullable=True, index=True)
     phone: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
     displayname: Mapped[str] = mapped_column(String(64), nullable=False)
     username: Mapped[str] = mapped_column(Text, nullable=True, unique=True)
+    business: Mapped[Optional["Businesses"]] = relationship("Businesses", back_populates="participants")
     messages: Mapped[list["RawMessages"]] = relationship("RawMessages", back_populates="sender")
 
     def __repr__(self)-> str:

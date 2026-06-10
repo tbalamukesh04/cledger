@@ -122,44 +122,58 @@ def get_transaction_by_id(db: Session, transaction_id: int, tenant_id: int) -> O
         Transactions.tenant_id == tenant_id
     ).first()
 
-def get_transaction_audit_history(db: Session, transaction_id: int):
+def get_transaction_audit_history(db: Session, transaction_id: int, tenant_id: int):
     """
     Fetch audit history for a specific transaction ordered by created_at ascending.
+    Strictly joins the parent table to prevent unauthorized history discovery across tenant boundaries.
     """
-    return db.query(TransactionAudit).filter(
-        TransactionAudit.transaction_id == transaction_id
+    return db.query(TransactionAudit).join(
+        Transactions, TransactionAudit.transaction_id == Transactions.id
+    ).filter(
+        TransactionAudit.transaction_id == transaction_id,
+        Transactions.tenant_id == tenant_id
     ).order_by(asc(TransactionAudit.created_at)).all()
 
-def get_transaction_by_message(db: Session, raw_message_id: int) -> Optional[Transactions]:    
+def get_transaction_by_message(db: Session, raw_message_id: int, tenant_id: int) -> Optional[Transactions]:    
     """
-    Fetch a transaction by its associated raw message ID.
+    Fetch a transaction by its associated raw message ID scoped to the active tenant context.
     """
-    return db.query(Transactions).filter(Transactions.raw_message_id == raw_message_id).first()
+    return db.query(Transactions).filter(
+        Transactions.raw_message_id == raw_message_id,
+        Transactions.tenant_id == tenant_id
+    ).first()
 
-def get_transaction_by_hash(db: Session, txn_hash: str) -> Optional[Transactions]:
+def get_transaction_by_hash(db: Session, txn_hash: str, tenant_id: int) -> Optional[Transactions]:
     """
-    Fetch a transaction by its unique idempotency hash.
+    Fetch a transaction by its unique idempotency hash scoped to the active tenant context.
     """
-    return db.query(Transactions).filter(Transactions.hash == txn_hash).first()
+    return db.query(Transactions).filter(
+        Transactions.hash == txn_hash,
+        Transactions.tenant_id == tenant_id
+    ).first()
 
 def create_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = False, actor_identifier: str = "system") -> Transactions:
     """
     Create a new transaction record.
     Enforces application-level uniqueness before insert and handles status assignment.
     """
-    # 1. Enforce application-level uniqueness on raw_message_id
+    tenant_id = txn_data.get("tenant_id")
+    if not tenant_id:
+        raise ValueError("tenant_id context identifier is strictly required to initialize transactional ledger rows.")
+
+    # 1. Enforce application-level uniqueness on raw_message_id within the active tenant domain
     raw_message_id = txn_data.get("raw_message_id")
     if raw_message_id:
-        existing_txn = get_transaction_by_message(db, raw_message_id)
+        existing_txn = get_transaction_by_message(db, raw_message_id, tenant_id=tenant_id)
         if existing_txn:
-            raise ValueError(f"Transaction for raw_message_id {raw_message_id} already exists.")
+            raise ValueError(f"Transaction for raw_message_id {raw_message_id} already exists within this tenant context.")
             
-    # 2. Enforce application-level uniqueness on hash
+    # 2. Enforce application-level uniqueness on hash within the active tenant domain
     txn_hash = txn_data.get("hash")
     if txn_hash:
-        existing_hash = get_transaction_by_hash(db, txn_hash)
+        existing_hash = get_transaction_by_hash(db, txn_hash, tenant_id=tenant_id)
         if existing_hash:
-            raise ValueError(f"Transaction with hash {txn_hash} already exists.")
+            raise ValueError(f"Transaction with hash {txn_hash} already exists within this tenant context.")
 
     # 3. Handle Status Assignment
     if "status" not in txn_data or not txn_data["status"]:
@@ -190,11 +204,14 @@ def create_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = Fal
         
     return db_txn
 
-def update_transaction(db: Session, transaction_id: int, update_data: Dict[str, Any], commit: bool = False, actor_identifier: str = "system", action: TransactionAuditAction = TransactionAuditAction.UPDATED) -> Optional[Transactions]:
+def update_transaction(db: Session, transaction_id: int, tenant_id: int, update_data: Dict[str, Any], commit: bool = False, actor_identifier: str = "system", action: TransactionAuditAction = TransactionAuditAction.UPDATED) -> Optional[Transactions]:
     """
-    Update an existing transaction record (e.g., status correction workflows).
+    Update an existing transaction record ensuring target entity falls inside the authorized tenant boundary.
     """
-    db_txn = db.query(Transactions).filter(Transactions.id == transaction_id).first()
+    db_txn = db.query(Transactions).filter(
+        Transactions.id == transaction_id,
+        Transactions.tenant_id == tenant_id
+    ).first()
     if not db_txn:
         return None
 
@@ -232,11 +249,14 @@ def upsert_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = Fal
     or INVALIDATED, it skips the update completely.
     """
     raw_message_id = txn_data.get("raw_message_id")
+    tenant_id = txn_data.get("tenant_id")
     if not raw_message_id:
         raise ValueError("raw_message_id is required for upsert operation.")
+    if not tenant_id:
+        raise ValueError("tenant_id context identifier is required for multi-tenant upsert scoping.")
 
-    # 1. Check if transaction already exists
-    existing_txn = get_transaction_by_message(db, raw_message_id)
+    # 1. Check if transaction already exists inside the specific tenant domain
+    existing_txn = get_transaction_by_message(db, raw_message_id, tenant_id=tenant_id)
 
     # 2. Human Override Protection
     if existing_txn:
@@ -245,9 +265,9 @@ def upsert_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = Fal
             return existing_txn
     
         if "hash" in txn_data:
-            existing_hash_txn = get_transaction_by_hash(db, txn_data["hash"])
+            existing_hash_txn = get_transaction_by_hash(db, txn_data["hash"], tenant_id=tenant_id)
             if existing_hash_txn and existing_hash_txn.id != existing_txn.id:
-                raise ValueError(f"Transaction with hash {txn_data['hash']} already exists.")
+                raise ValueError(f"Transaction with hash {txn_data['hash']} already exists within this tenant domain.")
         
         forbidden_fields = {"raw_message_id", "id", "created_at"}
         update_payload = {}
@@ -269,10 +289,18 @@ def upsert_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = Fal
         else:
             action = TransactionAuditAction.UPDATED
 
-        return update_transaction(db, existing_txn.id, update_payload, commit=commit, actor_identifier=actor_identifier, action=action)
+        return update_transaction(
+            db=db, 
+            transaction_id=existing_txn.id, 
+            tenant_id=tenant_id, 
+            update_data=update_payload, 
+            commit=commit, 
+            actor_identifier=actor_identifier, 
+            action=action
+        )
         
     else:
         if "description" in txn_data:
             txn_data["remarks"] = txn_data.pop("description")
 
-        return create_transaction(db, txn_data, commit=commit)
+        return create_transaction(db, txn_data, commit=commit, actor_identifier=actor_identifier)

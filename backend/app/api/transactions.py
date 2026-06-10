@@ -162,8 +162,8 @@ async def get_single_transaction(
     transaction = get_transaction_by_id(db, transaction_id=transaction_id, tenant_id=tenant_id)
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
-        
-    audit_history = get_transaction_audit_history(db, transaction_id=transaction_id)
+
+    audit_history = get_transaction_audit_history(db, transaction_id=transaction_id, tenant_id=tenant_id)
     
     return {
         "transaction": transaction,

@@ -10,7 +10,7 @@ class RawMessages(Base, TimestampMixin):
     __tablename__ = "raw_messages"
     
     id: Mapped[int] = mapped_column(Integer, autoincrement=True, primary_key=True)
-    tenant_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    tenant_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("businesses.id", ondelete="RESTRICT"), nullable=True, index=True)
     group_id: Mapped[int] = mapped_column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
     sender_id: Mapped[int] = mapped_column(Integer, ForeignKey("participants.id"), nullable=False, index=True)
     message_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
@@ -28,6 +28,7 @@ class RawMessages(Base, TimestampMixin):
     processing_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     processing_completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     
+    business: Mapped[Optional["Businesses"]] = relationship("Businesses", back_populates="raw_messages")
     sender: Mapped[Optional["Participants"]] = relationship("Participants", back_populates="messages")
     group: Mapped[Optional["Groups"]] = relationship("Groups", back_populates="messages")
 

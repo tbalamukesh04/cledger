@@ -7,6 +7,7 @@ from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.models.businesses import Businesses
 from app.models.transactions import TransactionStatus
 from app.core.jwt_utils import create_access_token
 from app.api.transactions import EXPORT_CSV_HEADERS
@@ -87,13 +88,15 @@ def test_transaction_list_includes_participant_data(mock_get_transactions, auth_
     assert txn_data["message"]["text"] == "Bought groceries for 120 USD"
 
 
+@patch("app.api.transactions.get_transaction_audit_history")
 @patch("app.api.transactions.get_transaction_by_id")
-def test_transaction_detail_includes_context(mock_get_txn_by_id, auth_headers, mock_joined_transaction):
+def test_transaction_detail_includes_context(mock_get_txn_by_id, mock_get_audit, auth_headers, mock_joined_transaction):
     """
     Scenario 2: Transaction Detail Includes Context
     Verifies the detail endpoint uses the joined query and returns contextual fields.
     """
     mock_get_txn_by_id.return_value = mock_joined_transaction
+    mock_get_audit.return_value = []
 
     response = client.get(f"/api/v1/transactions/{mock_joined_transaction.id}", headers=auth_headers)
     assert response.status_code == 200
@@ -152,9 +155,10 @@ def test_csv_export_contains_joined_data_and_consistency(mock_stream_transaction
     assert "2023-10-05T14:25:00" in row_dict["message_timestamp"]
 
 
+@patch("app.api.transactions.get_transaction_audit_history")
 @patch("app.api.transactions.get_transaction_by_id")
 @patch("app.api.transactions.get_transactions")
-def test_query_efficiency(mock_get_transactions, mock_get_txn_by_id, auth_headers, mock_joined_transaction):
+def test_query_efficiency(mock_get_transactions, mock_get_txn_by_id, mock_get_audit, auth_headers, mock_joined_transaction):
     """
     Scenario 5: Query Efficiency
     Verifies that the endpoints invoke their respective optimized CRUD functions exactly once,
@@ -173,5 +177,6 @@ def test_query_efficiency(mock_get_transactions, mock_get_txn_by_id, auth_header
 
     # Test Detail Endpoint Efficiency
     mock_get_txn_by_id.return_value = mock_joined_transaction
+    mock_get_audit.return_value = []
     client.get(f"/api/v1/transactions/{mock_joined_transaction.id}", headers=auth_headers)
     mock_get_txn_by_id.assert_called_once() # Asserts the DB is hit exactly once for the single item

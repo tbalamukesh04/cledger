@@ -3,7 +3,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Optional
 import enum
 
 from app.models.base import Base, TimestampMixin
@@ -18,7 +18,7 @@ class Transactions(Base, TimestampMixin):
     __tablename__ = "transactions"
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True, primary_key=True)
-    tenant_id: Mapped[int] = mapped_column(Integer, nullable=True, index=True)
+    tenant_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("businesses.id", ondelete="RESTRICT"), nullable=True, index=True)
     raw_message_id: Mapped[int] = mapped_column(Integer, ForeignKey("raw_messages.id"))
     amount: Mapped[Decimal] = mapped_column(Numeric(18,2), nullable=False)
     currency: Mapped[str] = mapped_column(String(10), default="ZMW")
@@ -31,7 +31,9 @@ class Transactions(Base, TimestampMixin):
     hash: Mapped[str] = mapped_column(String(256), unique=True, nullable=False)
     parsing_meta: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
+    business: Mapped[Optional["Businesses"]] = relationship("Businesses", back_populates="transactions")
     raw_message = relationship("RawMessages", backref='transaction')
+    
     __table_args__ = (
         CheckConstraint(txn_type.in_(['credit', 'debit']), name='check_txn_type'),
         UniqueConstraint('raw_message_id', name = "uq_transaction_raw_message"),
