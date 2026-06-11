@@ -15,6 +15,8 @@ from app.api.transactions_admin import router as transactions_admin_router
 from app.api.transactions import router as transactions_router
 from app.api.metrics import router as metrics_router
 from app.api.version import router as version_router
+from app.api.auth import router as auth_router
+from app.api.whatsapp_auth import router as whatsapp_auth_router
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.middleware.correlation import CorrelationIdMiddleware
 from app.utils.logger import log_event, log_error, LogTimer
@@ -72,6 +74,8 @@ app.add_middleware(CorrelationIdMiddleware)
 from app.utils.api_errors import setup_exception_handlers
 setup_exception_handlers(app)
 
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(whatsapp_auth_router, prefix="/api/v1")
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(webhook_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")

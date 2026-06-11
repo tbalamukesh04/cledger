@@ -92,6 +92,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   },
           ),
           const SizedBox(height: 28),
+          const _SettingsSectionHeader(title: 'Business Integration'),
+          const WhatsAppConnectionCard(),
+          const SizedBox(height: 28),
           const _SettingsSectionHeader(title: 'About'),
           _SettingsCardTile(
             icon: Icons.info_outline,

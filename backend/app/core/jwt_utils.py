@@ -24,12 +24,40 @@ def create_access_token(user_id: int, tenant_id: int, role: str = "user", expire
 
 def verify_jwt_token(token: str) -> dict:
     """
-    Decodes and verifies a JWT token. Returns the payload if valid.
-    Raises HTTPException if invalid or expired.
+    Decodes and verifies a JWT token. Dynamically routes token checks either to 
+    Auth0's RS256 JWKS asymmetric public key cache or local HS256 encryption.
     """
     try:
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        return payload
+        unverified_header = jwt.get_unverified_header(token)
+        alg = unverified_header.get("alg", "HS256")
+        
+        if alg == "RS256":
+            from app.core.config import api_security_settings
+            domain = api_security_settings.AUTH0_DOMAIN
+            audience = api_security_settings.AUTH0_AUDIENCE
+            
+            if not domain or not audience:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Auth0 engine domain or audience credentials are not configured on the backend server context."
+                )
+                
+            jwks_url = f"https://{domain}/.well-known/jwks.json"
+            jwk_client = jwt.PyJWKClient(jwks_url)
+            signing_key = jwk_client.get_signing_key_from_jwt(token)
+            
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["RS256"],
+                audience=audience,
+                issuer=f"https://{domain}/"
+            )
+            return payload
+        else:
+            payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+            return payload
+            
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meta WhatsApp Integration Engine Launch Surface</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f4f6f8; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 32px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); max-width: 420px; width: 100%; text-align: center; }
+        .btn { background-color: #0F9D88; color: white; border: none; padding: 12px 24px; font-size: 16px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: background 0.2s; width: 100%; }
+        .btn:hover { background-color: #0b7a69; }
+        .status { margin-top: 16px; font-size: 14px; color: #666; font-style: italic; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2 style="color: #333; margin-bottom: 8px;">Connect WhatsApp Channel</h2>
+    <p style="color: #666; font-size: 14px; margin-bottom: 24px; line-height: 1.5;">
+        Link your Meta WhatsApp Business Portfolio context securely to provision infrastructure boundaries.
+    </p>
+    
+    <button class="btn" onclick="launchEmbeddedSignup()">Launch Embedded Signup Wizard</button>
+    <div id="statusView" class="status">Awaiting initialization trigger inputs...</div>
+</div>
+
+<script>
+    // Initializing Meta JS SDK Async Container Bounds
+    window.fbAsyncInit = function() {
+        FB.init({
+            appId      : '{{ app_id }}', // Parameterized template rendering value injection
+            cookie     : true,
+            xfbml      : true,
+            version    : 'v20.0'
+        });
+    };
+
+    (function(d, s, id){
+        var js, fjs = d.getElementsByTagName(s)[0];
+        if (d.getElementById(id)) {return;}
+        js = d.createElement(s); js.id = id;
+        js.src = "https://connect.facebook.net/en_US/sdk.js";
+        fjs.parentNode.insertBefore(js, fjs);
+    }(document, 'script', 'facebook-jssdk'));
+
+    // Intercept event listeners for message responses passing from the target signup frame
+    window.addEventListener('message', function(event) {
+        if (event.origin !== "https://www.facebook.com" && event.origin !== "https://facebook.com") return;
+        
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'sessionInfoReceived') {
+                document.getElementById('statusView').innerText = "Session context captured. Resolving authorization claims...";
+                
+                const wabaId = data.data.whatsapp_business_account_id;
+                const phoneId = data.data.phone_number_id;
+                
+                // Transmit extracted artifacts via network boundary interface
+                executeBackendConnect(wabaId, phoneId);
+            }
+        } catch (e) {
+            // Ignore non-json signaling updates passed internally across frame windows
+        }
+    });
+
+    function launchEmbeddedSignup() {
+        document.getElementById('statusView').innerText = "Launching secure authentication window popup...";
+        FB.login(function(response) {
+            if (response.authResponse) {
+                const code = response.authResponse.code;
+                window.postMessage(JSON.stringify({
+                    type: 'sessionInfoReceived',
+                    data: { whatsapp_business_account_id: null, phone_number_id: null }
+                }), '*');
+            } else {
+                document.getElementById('statusView').innerText = "Onboarding pipeline cancellation actions triggered.";
+            }
+        }, {
+            scope: 'whatsapp_business_management,whatsapp_business_messaging',
+            extras: { feature: 'whatsapp_embedded_signup' }
+        });
+    }
+
+    function executeBackendConnect(wabaId, phoneId) {
+        fetch('/api/v1/whatsapp/connect', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Tenant-ID': '1' // Standard routing tracking identifier mock
+            },
+            body: JSON.stringify({
+                authorization_code: "mock_auth_code_handshake_flow",
+                provisional_waba_id: wabaId,
+                provisional_phone_number_id: phoneId
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                document.getElementById('statusView').style.color = "green";
+                document.getElementById('statusView').innerText = "Link successfully completed. Pipeline metrics validated.";
+            } else {
+                document.getElementById('statusView').innerText = "Validation Exception: " + data.detail;
+            }
+        })
+        .catch(err => {
+            document.getElementById('statusView').innerText = "Network transport mapping failure: " + err;
+        });
+    }
+</script>
+
+</body>
+</html>

@@ -19,6 +19,15 @@ class APISecurityConfig(BaseSettings):
     FORCE_UPDATE: bool = os.getenv("FORCE_UPDATE", "false").lower() in ("true", "1", "yes")
     APK_DOWNLOAD_URL: str = os.getenv("APK_DOWNLOAD_URL", "https://cledger.duckdns.org/downloads/app-release.apk")
     
+    # Auth0 OIDC SaaS Integration Configurations
+    AUTH0_DOMAIN: str = os.getenv("AUTH0_DOMAIN", "")
+    AUTH0_AUDIENCE: str = os.getenv("AUTH0_AUDIENCE", "")
+
+    # Meta WhatsApp Integration Variables
+    META_APP_ID: str = os.getenv("META_APP_ID", "placeholder_app_id")
+    META_APP_SECRET: str = os.getenv("META_APP_SECRET", "placeholder_app_secret")
+    META_GRAPH_VERSION: str = os.getenv("META_GRAPH_VERSION", "v20.0")
+
     model_config = SettingsConfigDict(
         env_file = ".env",
         extra = "ignore"
