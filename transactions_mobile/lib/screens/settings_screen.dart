@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../widgets/loading_state.dart';
+import '../widgets/whatsapp_connection_card.dart';
 
 class SettingsScreen extends StatefulWidget {
   final Future<void> Function() onRefreshRequested;
@@ -93,7 +94,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 28),
           const _SettingsSectionHeader(title: 'Business Integration'),
-          const WhatsAppConnectionCard(),
+          WhatsAppConnectionCard(),
           const SizedBox(height: 28),
           const _SettingsSectionHeader(title: 'About'),
           _SettingsCardTile(

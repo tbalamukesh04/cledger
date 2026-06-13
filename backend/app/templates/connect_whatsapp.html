@@ -15,16 +15,19 @@
 <body>
 
 <div class="card">
-    <h2 style="color: #333; margin-bottom: 8px;">Connect WhatsApp Channel</h2>
+    <h2 style="color: #333; margin-bottom: 8px;">Secure Meta Gateway</h2>
     <p style="color: #666; font-size: 14px; margin-bottom: 24px; line-height: 1.5;">
-        Link your Meta WhatsApp Business Portfolio context securely to provision infrastructure boundaries.
+        Tap below to launch the Meta authentication sequence. You will be automatically returned to the app upon completion.
     </p>
     
-    <button class="btn" onclick="launchEmbeddedSignup()">Launch Embedded Signup Wizard</button>
-    <div id="statusView" class="status">Awaiting initialization trigger inputs...</div>
+    <button class="btn" onclick="launchEmbeddedSignup()">Authorize WhatsApp</button>
+    <div id="statusView" class="status">Required: Tap button above to bypass browser popup blockers.</div>
 </div>
 
 <script>
+    // Global script execution state tracking variables
+    let oauthAuthorizationCode = null;
+
     // Initializing Meta JS SDK Async Container Bounds
     window.fbAsyncInit = function() {
         FB.init({
@@ -43,37 +46,20 @@
         fjs.parentNode.insertBefore(js, fjs);
     }(document, 'script', 'facebook-jssdk'));
 
-    // Intercept event listeners for message responses passing from the target signup frame
-    window.addEventListener('message', function(event) {
-        if (event.origin !== "https://www.facebook.com" && event.origin !== "https://facebook.com") return;
-        
-        try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'sessionInfoReceived') {
-                document.getElementById('statusView').innerText = "Session context captured. Resolving authorization claims...";
-                
-                const wabaId = data.data.whatsapp_business_account_id;
-                const phoneId = data.data.phone_number_id;
-                
-                // Transmit extracted artifacts via network boundary interface
-                executeBackendConnect(wabaId, phoneId);
-            }
-        } catch (e) {
-            // Ignore non-json signaling updates passed internally across frame windows
-        }
-    });
-
     function launchEmbeddedSignup() {
-        document.getElementById('statusView').innerText = "Launching secure authentication window popup...";
+        document.getElementById('statusView').innerText = "Awaiting Meta authorization...";
+        
         FB.login(function(response) {
             if (response.authResponse) {
                 const code = response.authResponse.code;
-                window.postMessage(JSON.stringify({
-                    type: 'sessionInfoReceived',
-                    data: { whatsapp_business_account_id: null, phone_number_id: null }
-                }), '*');
+                document.getElementById('statusView').innerText = "Meta authorization successful! Syncing with Cledger backend...";
+                
+                // Directly execute the backend connection.
+                // This bypasses the origin block that was freezing the UI.
+                executeBackendConnect(code, null, null);
             } else {
-                document.getElementById('statusView').innerText = "Onboarding pipeline cancellation actions triggered.";
+                document.getElementById('statusView').style.color = "red";
+                document.getElementById('statusView').innerText = "Authorization cancelled or failed.";
             }
         }, {
             scope: 'whatsapp_business_management,whatsapp_business_messaging',
@@ -81,31 +67,46 @@
         });
     }
 
-    function executeBackendConnect(wabaId, phoneId) {
+    function executeBackendConnect(code, wabaId, phoneId) {
         fetch('/api/v1/whatsapp/connect', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Tenant-ID': '1' // Standard routing tracking identifier mock
+                'X-Tenant-ID': '1'
             },
             body: JSON.stringify({
-                authorization_code: "mock_auth_code_handshake_flow",
+                authorization_code: code || "mock_auth_code_handshake_flow",
                 provisional_waba_id: wabaId,
                 provisional_phone_number_id: phoneId
             })
         })
-        .then(res => res.json())
-        .then(data => {
-            if (data.status === 'success') {
+        .then(function(res) {
+            return res.json();
+        })
+        .then(function(data) {
+            if (data.status === 'success' || data.message === 'success' || data.tenant_id) {
                 document.getElementById('statusView').style.color = "green";
-                document.getElementById('statusView').innerText = "Link successfully completed. Pipeline metrics validated.";
+                document.getElementById('statusView').innerHTML = 
+                    "<div style='margin-top: 20px; font-weight: bold; font-size: 16px;'>Authorization Complete!</div>" +
+                    "<div style='margin-top: 8px; font-size: 12px; color: #666;'>Backend Sync: Success</div><br>" +
+                    "<button class='btn' style='background-color: #0F9D88; padding: 16px; margin-top: 10px;' onclick='forceAppRedirect()'>Tap Here to Return to Cledger</button>" +
+                    "<br><br><small>Attempting automatic redirect...</small>";
+                
+                setTimeout(forceAppRedirect, 1000);
             } else {
-                document.getElementById('statusView').innerText = "Validation Exception: " + data.detail;
+                document.getElementById('statusView').style.color = "red";
+                document.getElementById('statusView').innerText = "Backend Token Rejected: " + JSON.stringify(data);
             }
         })
-        .catch(err => {
-            document.getElementById('statusView').innerText = "Network transport mapping failure: " + err;
+        .catch(function(err) {
+            document.getElementById('statusView').style.color = "red";
+            document.getElementById('statusView').innerText = "Client Exception: " + err.toString();
         });
+    }
+
+    function forceAppRedirect() {
+        var intentUrl = "intent://whatsapp/callback?status=success#Intent;scheme=cledger;package=com.example.transactions_mobile;end;";
+        window.location.replace(intentUrl);
     }
 </script>
 

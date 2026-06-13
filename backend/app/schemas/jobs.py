@@ -8,6 +8,7 @@ class WebhookJobPayload(BaseModel):
     Standardized job payload for async webhook processing.
     """
     job_id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier for this specific background job")
+    tenant_id: int = Field(..., description="The internal database ID of the Tenant (businesses table)")
     raw_message_id: int = Field(..., description="The internal database ID of the RawMessages record")
     participant_id: int = Field(..., description="The internal database ID of the Participant sender")
     group_id: int = Field(..., description="The internal database ID of the Group context")

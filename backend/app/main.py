@@ -100,9 +100,17 @@ async def get_dev_token():
     token = create_access_token(user_id=1, tenant_id=1, role="admin")
     return {"access_token": token}
 
+# if __name__ == "__main__":
+#     is_dev = os.getenv("ENVIRONMENT", "production").lower() == "development"
+#     api_host = os.getenv("API_HOST", "127.0.0.1")
+#     api_port = int(os.getenv("API_PORT", 8000))
+    
+#     uvicorn.run("app.main:app", host=api_host, port=api_port, reload=is_dev)
+
 if __name__ == "__main__":
     is_dev = os.getenv("ENVIRONMENT", "production").lower() == "development"
-    api_host = os.getenv("API_HOST", "127.0.0.1")
+    # Fallback to 0.0.0.0 to allow mobile interfaces to bridge sockets cleanly
+    api_host = os.getenv("API_HOST", "0.0.0.0")
     api_port = int(os.getenv("API_PORT", 8000))
     
     uvicorn.run("app.main:app", host=api_host, port=api_port, reload=is_dev)

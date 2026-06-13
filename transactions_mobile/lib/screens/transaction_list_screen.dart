@@ -40,10 +40,6 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     
     // Initialize API dependencies and repository
     final apiService = ApiService();
-    
-    // Temporarily inject the test token to resolve the 401 Unauthorized error.
-    // TODO: Replace with dynamic token retrieval from secure storage in future steps.
-    apiService.setAuthToken('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0ZW5hbnRfaWQiOjEsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc4MzE2MDUzMH0.UWiiQOQfQ2AmdMCbmNs17RtUK8wntzgH2mIwu0GkabQ');
 
     // Pass the ApiService directly
     final apiClient = ApiClient(apiService);

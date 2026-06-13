@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'screens/transaction_list_screen.dart';
+import 'screens/onboarding_registration_screen.dart';
 import 'models/transaction.dart';
 import 'models/participant.dart';
 import 'models/message_metadata.dart';
@@ -9,12 +10,29 @@ import 'services/api_service.dart';
 import 'services/api_client.dart';
 import 'services/version_service.dart';
 import 'services/update_prompt_dialog.dart';
+import 'package:app_links/app_links.dart'; 
+import 'dart:async';
 
 // Global navigation key enabling safe uncoupled context resolution from root wrappers
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  final appLinks = AppLinks();
+  
+  // Listen for the redirect from the Meta Wizard
+  appLinks.uriLinkStream.listen((Uri? uri) {
+    if (uri != null && uri.scheme == 'cledger' && uri.host == 'whatsapp') {
+      print("--> [DeepLink] Callback received: $uri");
+      
+      // Navigate to the transaction screen upon successful WhatsApp mapping
+      rootNavigatorKey.currentState?.pushReplacement(
+        MaterialPageRoute(builder: (context) => const TransactionListScreen()),
+      );
+    }
+  });
+
   try {
     await Hive.initFlutter();
     
@@ -164,7 +182,7 @@ class MyApp extends StatelessWidget {
       ),
       // Intercept initialization lifecycle wrapping primary target pages
       home: const UpdatePromptInterceptor(
-        child: TransactionListScreen(),
+        child: OnboardingRegistrationScreen(),
       ),
     );
   }

@@ -21,6 +21,7 @@ from app.utils.logger import log_event, log_error, LogTimer
 from app.core.log_events import LogEvent
 from app.core.metrics import inc_metric
 from app.middleware.ip_filter import IPFilter
+from app.services.tenant_resolution_service import resolve_tenant_from_webhook
 
 router = APIRouter()
 
@@ -87,8 +88,28 @@ async def receive_webhook(
 
         if body.get("object") == "whatsapp_business_account":
             for entry in body.get("entry", []):
+                waba_id = entry.get("id")
+                
                 for change in entry.get("changes", []):
                     value = change.get("value", {})
+                    
+                    # --- Tenant Resolution ---
+                    phone_number_id = value.get("metadata", {}).get("phone_number_id")
+                    tenant_id = resolve_tenant_from_webhook(db, phone_number_id=phone_number_id, waba_id=waba_id)
+                    
+                    if not tenant_id:
+                        # Quarantine logic: Return 200 to prevent retry loops, but log heavily and do not process
+                        log_event(
+                            LogEvent.SYSTEM_ERROR, 
+                            "Unmatched Webhook Quarantined", 
+                            level=logging.WARNING, 
+                            reason="tenant_resolution_failed", 
+                            waba_id=waba_id, 
+                            phone_number_id=phone_number_id,
+                            status="quarantined"
+                        )
+                        return Response(content="UNMATCHED_WEBHOOK_QUARANTINED", status_code=200)
+
                     contacts = value.get("contacts", [])
 
                     if "messages" in value:
@@ -120,34 +141,35 @@ async def receive_webhook(
 
                             log_event(LogEvent.WEBHOOK_RECEIVED, "Payload Extracted", phone_number=sender_phone, name=sender_name, msg_type=msg_type, raw_message_text=raw_text)
 
-                            participant = db.query(Participants).filter(Participants.phone == sender_phone).first()
+                            # Scope lookups and creation strictly to the resolved tenant boundary
+                            participant = db.query(Participants).filter(Participants.phone == sender_phone, Participants.tenant_id == tenant_id).first()
                             if participant:
                                 sender_db_id = participant.id
                             else:
                                 try:
-                                    new_participant = Participants(tenant_id=1, phone=sender_phone, displayname=sender_name, username=sender_username)
+                                    new_participant = Participants(tenant_id=tenant_id, phone=sender_phone, displayname=sender_name, username=sender_username)
                                     db.add(new_participant)
                                     db.flush()
                                     sender_db_id = new_participant.id
                                 except IntegrityError:
                                     db.rollback()
-                                    sender_db_id = db.query(Participants).filter(Participants.phone == sender_phone).first().id                            
+                                    sender_db_id = db.query(Participants).filter(Participants.phone == sender_phone, Participants.tenant_id == tenant_id).first().id                            
                             
-                            group = db.query(Groups).filter(Groups.group_id == group_id_str).first()
+                            group = db.query(Groups).filter(Groups.group_id == group_id_str, Groups.tenant_id == tenant_id).first()
                             if group:
                                 group_db_id = group.id
                             else:
                                 try:
-                                    new_group = Groups(tenant_id=1, group_id=group_id_str, groupname="Direct Message" if group_id_str == sender_phone else "Unknown Group")
+                                    new_group = Groups(tenant_id=tenant_id, group_id=group_id_str, groupname="Direct Message" if group_id_str == sender_phone else "Unknown Group")
                                     db.add(new_group)
                                     db.flush()
                                     group_db_id = new_group.id
                                 except IntegrityError:
                                     db.rollback()
-                                    group_db_id = db.query(Groups).filter(Groups.group_id == group_id_str).first().id
+                                    group_db_id = db.query(Groups).filter(Groups.group_id == group_id_str, Groups.tenant_id == tenant_id).first().id
 
                             new_message = RawMessages(
-                                tenant_id=1, group_id=group_db_id, sender_id=sender_db_id, 
+                                tenant_id=tenant_id, group_id=group_db_id, sender_id=sender_db_id, 
                                 message_id=msg_id, received_at=dt_received, raw_json=body,
                                 raw_text=raw_text, hash=idem_key                
                             )
@@ -157,8 +179,13 @@ async def receive_webhook(
                                 db.commit()
                                 
                                 job_payload = WebhookJobPayload(
-                                    raw_message_id=new_message.id, participant_id=sender_db_id, group_id=group_db_id,
-                                    message_timestamp=dt_received, webhook_event_type=msg_type, ingestion_time=datetime.now(timezone.utc)
+                                    tenant_id=tenant_id,
+                                    raw_message_id=new_message.id, 
+                                    participant_id=sender_db_id, 
+                                    group_id=group_db_id,
+                                    message_timestamp=dt_received, 
+                                    webhook_event_type=msg_type, 
+                                    ingestion_time=datetime.now(timezone.utc)
                                 )
                                 
                                 try:

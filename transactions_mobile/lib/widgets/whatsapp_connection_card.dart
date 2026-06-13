@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/whatsapp_state_manager.dart';
+import '../services/api_service.dart';
 
 class WhatsAppConnectionCard extends StatefulWidget {
   const WhatsAppConnectionCard({super.key});
@@ -49,7 +51,7 @@ class _WhatsAppConnectionCardState extends State<WhatsAppConnectionCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.between,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
                       children: [
@@ -62,7 +64,7 @@ class _WhatsAppConnectionCardState extends State<WhatsAppConnectionCard> {
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
-                            isConnected ? Icons.whatsapp : (hasError ? Icons.error_outline : Icons.link_off), 
+                            isConnected ? Icons.chat_bubble : (hasError ? Icons.error_outline : Icons.link_off), 
                             color: isConnected ? Colors.green : (hasError ? Colors.redAccent : Colors.orange),
                             size: 24,
                           ),
@@ -115,7 +117,7 @@ class _WhatsAppConnectionCardState extends State<WhatsAppConnectionCard> {
                 if (hasError) ...[
                   Container(
                     padding: const EdgeInsets.all(10.0),
-                    margin: const EdgeInsets.bottom(12.0),
+                    margin: const EdgeInsets.only(bottom: 12.0),
                     decoration: BoxDecoration(
                       color: Colors.redAccent.withOpacity(0.05),
                       borderRadius: BorderRadius.circular(8.0),
@@ -149,7 +151,22 @@ class _WhatsAppConnectionCardState extends State<WhatsAppConnectionCard> {
                     'WhatsApp connection setup must be securely launched and verified using the browser context on your Admin Portal dashboard.',
                     style: TextStyle(fontSize: 13, height: 1.4, color: Colors.grey),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0F9D88),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: _launchMetaOnboardingPortal,
+                    icon: const Icon(Icons.open_in_new, size: 18),
+                    label: const Text(
+                      'Launch Meta Setup Wizard',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   Container(
                     padding: const EdgeInsets.all(10.0),
                     decoration: BoxDecoration(
@@ -179,6 +196,29 @@ class _WhatsAppConnectionCardState extends State<WhatsAppConnectionCard> {
     );
   }
 
+  Future<void> _launchMetaOnboardingPortal() async {
+    try {
+      // Extract the configured target base URL string from the active ApiService configuration network tier
+      final String configuredBaseUrl = ApiService().client.options.baseUrl;
+      
+      // Points directly to the exposed static layout template handler served by the FastAPI engine
+      final Uri targetPortalUri = Uri.parse('$configuredBaseUrl/api/v1/whatsapp/setup-surface');
+      
+      if (await canLaunchUrl(targetPortalUri)) {
+        await launchUrl(
+          targetPortalUri,
+          mode: LaunchMode.externalApplication, // Forces launch via default system browser container
+        );
+      } else {
+        _stateManager.syncWithBackend(); // Force sync retry evaluation if execution limits trip
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not trigger authorization container: $e')),
+      );
+    }
+  }
+
   void _showDisconnectWarning(BuildContext context) {
     showDialog(
       context: context,
@@ -204,27 +244,6 @@ class _WhatsAppConnectionCardState extends State<WhatsAppConnectionCard> {
       ),
     );
   }
-
-  Widget _buildStatusRow(IconData icon, String label, String value) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: Colors.grey[600]),
-        const SizedBox(width: 8),
-        Text(
-          '$label: ',
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.grey),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black87),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-}
 
   Widget _buildStatusRow(IconData icon, String label, String value) {
     return Row(

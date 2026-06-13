@@ -1,7 +1,11 @@
 import logging
 import os
+import secrets
+import httpx
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -11,10 +15,8 @@ from app.core.config import api_security_settings
 from app.utils.logger import log_event, log_error
 from app.core.log_events import LogEvent
 
-# Using placeholder implementation for Graph API network validation requests
-import secrets
-
 router = APIRouter(prefix="/whatsapp", tags=["WhatsApp Onboarding"])
+templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
 
 class WhatsAppConnectRequest(BaseModel):
@@ -26,6 +28,22 @@ class WhatsAppStatusResponse(BaseModel):
     connected: bool
     waba_id: Optional[str] = None
     phone_number: Optional[str] = None
+
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+# Setup basic runtime templates rendering point directory reference maps
+templates = Jinja2Templates(directory="app/templates")
+
+@router.get("/setup-surface", response_class=HTMLResponse)
+async def serve_meta_setup_surface():
+    """
+    Renders the day 100 Meta SDK Embedded Signup window interaction surface.
+    """
+    return templates.TemplateResponse("connect_whatsapp.html", {
+        "request": {}, 
+        "app_id": api_security_settings.META_APP_ID
+    })
 
 @router.post("/connect", status_code=status.HTTP_200_OK)
 async def connect_whatsapp(
