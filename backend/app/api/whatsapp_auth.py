@@ -2,6 +2,7 @@ import logging
 import os
 import secrets
 import httpx
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
@@ -14,6 +15,8 @@ from app.models.businesses import Businesses
 from app.core.config import api_security_settings
 from app.utils.logger import log_event, log_error
 from app.core.log_events import LogEvent
+from app.services.meta_auth_service import MetaAuthService
+from app.services.waba_subscription_service import WABASubscriptionService
 
 router = APIRouter(prefix="/whatsapp", tags=["WhatsApp Onboarding"])
 templates = Jinja2Templates(directory="app/templates")
@@ -75,22 +78,35 @@ async def connect_whatsapp(
         # Execute the authoritative token exchange loop with Meta Graph API if it's a real integration code
         if payload.authorization_code != "mock_auth_code_handshake_flow":
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    # 1. Exchange the temporary authorization code for a long-lived access token
-                    token_url = f"https://graph.facebook.com/{api_security_settings.META_GRAPH_VERSION}/oauth/access_token"
-                    token_response = await client.get(token_url, params={
-                        "client_id": api_security_settings.META_APP_ID,
-                        "client_secret": api_security_settings.META_APP_SECRET,
-                        "code": payload.authorization_code
-                    })
+                # 1. Authorize & Acquire Long-Lived Credentials
+                meta_service = MetaAuthService()
+                long_lived_token = await meta_service.process_tenant_onboarding(
+                    auth_code=payload.authorization_code
+                )
+                
+                business.meta_access_token = long_lived_token
+                business.meta_token_last_refreshed_at = datetime.now(timezone.utc)
+                db.flush() 
+                
+                log_event(LogEvent.WEBHOOK_RECEIVED, "Authoritative Graph long-lived access token acquired successfully.")
+
+                # 2. Automate WABA Webhook Subscription
+                if authoritative_waba_id:
+                    subscription_service = WABASubscriptionService(db)
+                    subscription_success = await subscription_service.subscribe_waba(
+                        tenant_id=tenant_id, 
+                        waba_id=authoritative_waba_id, 
+                        access_token=long_lived_token
+                    )
                     
-                    if token_response.status_code != 200:
-                        log_event(LogEvent.SYSTEM_ERROR, "Meta OAuth token exchange failed", response=token_response.text)
-                        raise HTTPException(status_code=400, detail="Failed to exchange Meta authorization code.")
-                    
-                    access_token = token_response.json().get("access_token")
-                    log_event(LogEvent.WEBHOOK_RECEIVED, "Authoritative Graph access token acquired successfully.")
-            except httpx.RequestError as exc:
+                    if not subscription_success:
+                        # Log heavily, but do not crash the onboarding flow if webhooks fail; 
+                        # they can be retried via a health-check endpoint later.
+                        log_event(LogEvent.SYSTEM_ERROR, "WABA Webhook Subscription Failed during initial handshake.", waba_id=authoritative_waba_id)
+
+            except HTTPException:
+                raise
+            except Exception as exc:
                 log_error(LogEvent.SYSTEM_ERROR, error=exc, message="Network transport error communicating with Meta Graph API")
                 raise HTTPException(status_code=502, detail="Meta Graph API communication gateway timeout error.")
         else:

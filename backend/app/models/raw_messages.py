@@ -11,6 +11,11 @@ class RawMessages(Base, TimestampMixin):
     
     id: Mapped[int] = mapped_column(Integer, autoincrement=True, primary_key=True)
     tenant_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("businesses.id", ondelete="RESTRICT"), nullable=True, index=True)
+    
+    # Message Ownership & Logical Hierarchy Context
+    business_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    phone_number_id: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    
     group_id: Mapped[int] = mapped_column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
     sender_id: Mapped[int] = mapped_column(Integer, ForeignKey("participants.id"), nullable=False, index=True)
     message_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)

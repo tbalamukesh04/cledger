@@ -21,7 +21,7 @@ from app.utils.logger import log_event, log_error, LogTimer
 from app.core.log_events import LogEvent
 from app.core.metrics import inc_metric
 from app.middleware.ip_filter import IPFilter
-from app.services.tenant_resolution_service import resolve_tenant_from_webhook
+from app.services.tenant_resolution_service import TenantResolutionService
 
 router = APIRouter()
 
@@ -72,7 +72,7 @@ async def receive_webhook(
         
         try:
             body = json.loads(raw_body)
-            with open("/var/log/app/whatsapp_payload.json", "w") as dump_file:
+            with open("whatsapp_payload.json", "w") as dump_file:
                 import json as _json
                 dump_file.write(_json.dumps(body, indent=2))
         except json.JSONDecodeError:
@@ -95,20 +95,17 @@ async def receive_webhook(
                     
                     # --- Tenant Resolution ---
                     phone_number_id = value.get("metadata", {}).get("phone_number_id")
-                    tenant_id = resolve_tenant_from_webhook(db, phone_number_id=phone_number_id, waba_id=waba_id)
                     
-                    if not tenant_id:
-                        # Quarantine logic: Return 200 to prevent retry loops, but log heavily and do not process
-                        log_event(
-                            LogEvent.SYSTEM_ERROR, 
-                            "Unmatched Webhook Quarantined", 
-                            level=logging.WARNING, 
-                            reason="tenant_resolution_failed", 
-                            waba_id=waba_id, 
-                            phone_number_id=phone_number_id,
-                            status="quarantined"
-                        )
+                    resolution_service = TenantResolutionService(db)
+                    tenant_id = resolution_service.resolve_tenant(value=value, waba_id=waba_id)
+                    
+                    # If we cannot resolve the tenant context OR the specific phone number, quarantine immediately.
+                    if not tenant_id or not phone_number_id:
+                        # Quarantine logic: Return 200 to prevent retry loops. Logging handled in service.
                         return Response(content="UNMATCHED_WEBHOOK_QUARANTINED", status_code=200)
+                    
+                    # Conceptually separate assignments for downstream processing
+                    business_id = tenant_id 
 
                     contacts = value.get("contacts", [])
 
@@ -169,9 +166,16 @@ async def receive_webhook(
                                     group_db_id = db.query(Groups).filter(Groups.group_id == group_id_str, Groups.tenant_id == tenant_id).first().id
 
                             new_message = RawMessages(
-                                tenant_id=tenant_id, group_id=group_db_id, sender_id=sender_db_id, 
-                                message_id=msg_id, received_at=dt_received, raw_json=body,
-                                raw_text=raw_text, hash=idem_key                
+                                tenant_id=tenant_id,
+                                business_id=business_id,
+                                phone_number_id=phone_number_id,
+                                group_id=group_db_id, 
+                                sender_id=sender_db_id, 
+                                message_id=msg_id, 
+                                received_at=dt_received, 
+                                raw_json=body,
+                                raw_text=raw_text, 
+                                hash=idem_key                
                             )
                             db.add(new_message)
                             
@@ -180,6 +184,10 @@ async def receive_webhook(
                                 
                                 job_payload = WebhookJobPayload(
                                     tenant_id=tenant_id,
+                                    business_id=business_id,
+                                    phone_number_id=phone_number_id,
+                                    message_id=msg_id,
+                                    payload=message,
                                     raw_message_id=new_message.id, 
                                     participant_id=sender_db_id, 
                                     group_id=group_db_id,
@@ -187,7 +195,7 @@ async def receive_webhook(
                                     webhook_event_type=msg_type, 
                                     ingestion_time=datetime.now(timezone.utc)
                                 )
-                                
+                  
                                 try:
                                     redis_client.lpush(WEBHOOK_QUEUE_NAME, job_payload.to_json())
                                     inc_metric("total_webhooks")
