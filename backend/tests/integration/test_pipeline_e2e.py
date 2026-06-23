@@ -14,6 +14,18 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_app_state(mock_redis):
     app.state.redis = mock_redis
+    from app.database.database import SessionLocal
+    from app.models.businesses import Businesses
+    db = SessionLocal()
+    tenant = db.query(Businesses).filter_by(id=1).first()
+    if not tenant:
+        tenant = Businesses(id=1, name="Global Test", slug="global", is_active=True, meta_waba_id="waba_e2e", meta_phone_number_id="phone_e2e")
+        db.add(tenant)
+    else:
+        tenant.meta_waba_id = "waba_e2e"
+        tenant.meta_phone_number_id = "phone_e2e"
+    db.commit()
+    db.close()
     yield
 
 import sys
@@ -67,16 +79,20 @@ def generate_signature(payload_bytes: bytes, secret: str) -> str:
 def trigger_webhook(phone: str, msg_id: str, text: str) -> bool:
     payload = {
         "object": "whatsapp_business_account",
-        "entry": [{"changes": [{"value": {
-            "contacts": [{"profile": {"name": "Pipeline Tester"}, "wa_id": phone}],
-            "messages": [{
-                "from": phone,
-                "id": msg_id,
-                "type": "text",
-                "timestamp": str(int(time.time())),
-                "text": {"body": text}
-            }]
-        }}]}]
+        "entry": [{
+            "id": "waba_e2e",
+            "changes": [{"value": {
+                "metadata": {"display_phone_number": "1234567890", "phone_number_id": "phone_e2e"},
+                "contacts": [{"profile": {"name": "Pipeline Tester"}, "wa_id": phone}],
+                "messages": [{
+                    "from": phone,
+                    "id": msg_id,
+                    "type": "text",
+                    "timestamp": str(int(time.time())),
+                    "text": {"body": text}
+                }]
+            }}]
+        }]
     }
     
     payload_bytes = json.dumps(payload, separators=(',', ':')).encode('utf-8')

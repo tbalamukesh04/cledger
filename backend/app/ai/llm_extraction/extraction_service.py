@@ -7,11 +7,15 @@ from app.utils.logger import log_event, log_error, LogTimer
 from app.core.log_events import LogEvent
 from app.core.metrics import inc_metric
 
-def process_extraction_batch(candidates_for_ai: List[Any]) -> Dict[str, Any]:
+def process_extraction_batch(candidates_for_ai: List[Any], tenant_id: int) -> Dict[str, Any]:
     """
     Constructs and sends a batch of transaction messages to Gemini for extraction.
     Returns the raw JSON dictionary response from the Gemini API.
     """
+    for candidate in candidates_for_ai:
+        if getattr(candidate, 'tenant_id', None) != tenant_id:
+            raise ValueError(f"Cross-tenant AI extraction batch violation. Candidate payload belongs to invalid tenant scope.")
+
     batch_payload = build_batch_request_payload(candidates_for_ai)
     user_prompt_data, system_instruction, version_id = construct_batch_prompt(batch_payload)
 

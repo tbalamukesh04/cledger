@@ -13,6 +13,10 @@ def test_redis_queue_push_pop_simulation(mock_redis):
     # 1. Simulate a JSON string sitting in the Redis queue
     mock_job = {
         "job_id": "test_uuid_123",
+        "tenant_id": 1,
+        "business_id": "test_waba",
+        "phone_number_id": "test_phone",
+        "message_id": "wamid.999",
         "raw_message_id": 999,
         "participant_id": 1,
         "group_id": 2,

@@ -13,6 +13,18 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_app_state(mock_redis):
     app.state.redis = mock_redis
+    from app.database.database import SessionLocal
+    from app.models.businesses import Businesses
+    db = SessionLocal()
+    tenant = db.query(Businesses).filter_by(id=1).first()
+    if not tenant:
+        tenant = Businesses(id=1, name="Global Test", slug="global", is_active=True, meta_waba_id="waba_consumption", meta_phone_number_id="phone_consumption")
+        db.add(tenant)
+    else:
+        tenant.meta_waba_id = "waba_consumption"
+        tenant.meta_phone_number_id = "phone_consumption"
+    db.commit()
+    db.close()
     yield
 
 # Ensure we can import from the app module
@@ -36,14 +48,16 @@ def generate_signature(payload_bytes: bytes, secret: str) -> str:
     return f"sha256={signature}"
 
 def test_worker_consumption(mock_redis):
+    import uuid
     setup_logging()
     mock_redis.delete(WEBHOOK_QUEUE_NAME)
-    
+
     run_id = str(int(time.time()))
-    test_phone = f"26099900{run_id[-3:]}"
+    test_phone = f"2609{uuid.uuid4().hex[:7]}"
     payload = {
         "object": "whatsapp_business_account",
-        "entry": [{"changes": [{"value": {
+        "entry": [{"id": "waba_consumption", "changes": [{"value": {
+            "metadata": {"display_phone_number": "1234567890", "phone_number_id": "phone_consumption"},
             "contacts": [{"profile": {"name": "Worker E2E Tester"}, "wa_id": test_phone}],
             "messages": [{
                 "from": test_phone,

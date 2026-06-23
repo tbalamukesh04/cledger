@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_db
 from app.core.auth_dependencies import require_admin
 from app.middleware.ip_filter import IPFilter
+from app.models.transactions import Transactions
 from app.schemas.transactions import TransactionCorrectionRequest, TransactionInvalidationRequest
 from app.services.transaction_correction_service import correct_transaction_service, invalidate_transaction_service
 from app.utils.logger import log_event, log_error
@@ -24,18 +25,22 @@ def correct_transaction_endpoint(
     db: Session = Depends(get_db),
 ):
     try:
+        txn = db.query(Transactions).filter(Transactions.id == transaction_id).first()
+        if not txn:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+
         correction_data = request.model_dump(exclude_unset=True)
 
         updated_txn = correct_transaction_service(
             db=db,
             transaction_id=transaction_id,
+            tenant_id=txn.tenant_id,
             correction_data=correction_data,
             actor_identifier="admin_user"
         )
 
         if not updated_txn:
             raise HTTPException(status_code=404, detail="Transaction not found")
-
         db.commit()
         db.refresh(updated_txn)
         
@@ -57,9 +62,14 @@ def invalidate_transaction_endpoint(
     db: Session = Depends(get_db),
 ):
     try:
+        txn = db.query(Transactions).filter(Transactions.id == transaction_id).first()
+        if not txn:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+
         updated_txn = invalidate_transaction_service(
             db=db,
             transaction_id=transaction_id,
+            tenant_id=txn.tenant_id,
             reason=request.reason,
             actor_identifier="admin_user"
         )

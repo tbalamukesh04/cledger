@@ -22,6 +22,20 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_app_state(mock_redis):
     app.state.redis = mock_redis
+    
+    # Seed a test tenant so TenantResolutionService validates incoming mock webhooks
+    from app.database.database import SessionLocal
+    from app.models.businesses import Businesses
+    db = SessionLocal()
+    tenant = db.query(Businesses).filter_by(meta_waba_id="idem_test_waba").first()
+    if not tenant:
+        tenant = Businesses(
+            name="Idem Test", slug="idem-test", 
+            meta_waba_id="idem_test_waba", meta_phone_number_id="idem_test_phone", is_active=True
+        )
+        db.add(tenant)
+        db.commit()
+    db.close()
     yield
 
 WEBHOOK_URL = "/api/v1/webhook"
@@ -74,10 +88,14 @@ def create_payload(phone: str, msg_id: str | None, text: str, timestamp: str) ->
 
     return {
         "object": "whatsapp_business_account",
-        "entry": [{"changes": [{"value": {
-            "contacts": [{"profile": {"name": "Idemp Tester"}, "wa_id": phone}],
-            "messages": [msg_obj]
-        }}]}]
+        "entry": [{
+            "id": "idem_test_waba",
+            "changes": [{"value": {
+                "metadata": {"display_phone_number": phone, "phone_number_id": "idem_test_phone"},
+                "contacts": [{"profile": {"name": "Idemp Tester"}, "wa_id": phone}],
+                "messages": [msg_obj]
+            }}]
+        }]
     }
 
 def test_exact_wamid_duplicate(mock_redis):

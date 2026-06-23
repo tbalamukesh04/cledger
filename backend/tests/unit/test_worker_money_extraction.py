@@ -35,6 +35,18 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_app_state(mock_redis):
     app.state.redis = mock_redis
+    from app.database.database import SessionLocal
+    from app.models.businesses import Businesses
+    db = SessionLocal()
+    tenant = db.query(Businesses).filter_by(id=1).first()
+    if not tenant:
+        tenant = Businesses(id=1, name="Global Test", slug="global", is_active=True, meta_waba_id="waba_money", meta_phone_number_id="phone_money")
+        db.add(tenant)
+    else:
+        tenant.meta_waba_id = "waba_money"
+        tenant.meta_phone_number_id = "phone_money"
+    db.commit()
+    db.close()
     yield
 
 def generate_signature(payload_bytes: bytes, secret: str) -> str:
@@ -73,16 +85,20 @@ def run_monetary_test_scenario(mock_redis, scenario_name: str, message_text: str
     
     payload = {
         "object": "whatsapp_business_account",
-        "entry": [{"changes": [{"value": {
-            "contacts": [{"profile": {"name": "Finance Tester"}, "wa_id": test_phone}],
-            "messages": [{
-                "from": test_phone,
-                "id": f"wamid.MONEY_TEST_{run_id}_{int(time.time() * 1000)}",
-                "timestamp": str(int(time.time())),
-                "type": "text",
-                "text": {"body": message_text}
-            }]
-        }}]}]
+        "entry": [{
+            "id": "waba_money",
+            "changes": [{"value": {
+                "metadata": {"display_phone_number": "1234567890", "phone_number_id": "phone_money"},
+                "contacts": [{"profile": {"name": "Finance Tester"}, "wa_id": test_phone}],
+                "messages": [{
+                    "from": test_phone,
+                    "id": f"wamid.MONEY_TEST_{run_id}_{int(time.time() * 1000)}",
+                    "timestamp": str(int(time.time())),
+                    "type": "text",
+                    "text": {"body": message_text}
+                }]
+            }}]
+        }]
     }
     
     payload_bytes = json.dumps(payload, separators=(',', ':')).encode('utf-8')

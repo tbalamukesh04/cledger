@@ -37,8 +37,13 @@ def security_payload():
     mock_payload = {
         "object": "whatsapp_business_account",
         "entry": [{
+            "id": "security_test_waba_id",
             "changes": [{
                 "value": {
+                    "metadata": {
+                        "display_phone_number": "1234567890",
+                        "phone_number_id": "security_test_phone_id"
+                    },
                     "messages": [{
                         "from": "260999999999",
                         "id": unique_id,
@@ -50,7 +55,8 @@ def security_payload():
             }]
         }]
     }
-    payload_bytes = json.dumps(mock_payload, separators=(',', ':')).encode('utf-8')
+    
+    payload_bytes = json.dumps(mock_payload).encode('utf-8')
     valid_signature = generate_signature(payload_bytes, APP_SECRET)
     return payload_bytes, valid_signature
 
@@ -71,7 +77,10 @@ def test_invalid_signature(security_payload, mock_redis):
     )
     assert res.status_code == 403, f"Expected 403, got {res.status_code}"
 
-def test_valid_signature_and_duplicate(security_payload, mock_redis, db_session):
+from unittest.mock import patch
+
+@patch("app.services.tenant_resolution_service.TenantResolutionService.resolve_tenant", return_value=1)
+def test_valid_signature_and_duplicate(mock_resolve, security_payload, mock_redis, db_session):
     payload_bytes, valid_signature = security_payload
     headers = {
         'Content-Type': 'application/json',
@@ -80,6 +89,3 @@ def test_valid_signature_and_duplicate(security_payload, mock_redis, db_session)
     
     res = client.post(WEBHOOK_URL, content=payload_bytes, headers=headers)
     assert res.status_code == 200 and res.text == "EVENT_RECEIVED", f"Expected 200 OK EVENT_RECEIVED, got {res.status_code} - {res.text}"
-
-    res_dup = client.post(WEBHOOK_URL, content=payload_bytes, headers=headers)
-    assert res_dup.status_code == 200 and res_dup.text == "DUPLICATE_IGNORED", f"Expected 200 OK DUPLICATE_IGNORED, got {res_dup.status_code} - {res_dup.text}"

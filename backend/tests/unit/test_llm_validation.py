@@ -58,7 +58,7 @@ def test_missing_fields_rejected():
     result = parse_batch_response(raw_response, ["2"], "batch-test-02")
     
     # Should return None for the specific message ID due to validation failure
-    assert result["2"] 
+    assert result.get("2") is None
 
 def test_incorrect_data_types_rejected():
     incorrect_types_json = """

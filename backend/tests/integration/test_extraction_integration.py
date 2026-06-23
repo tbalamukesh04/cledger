@@ -27,7 +27,7 @@ def test_llm_extraction_integration(mock_gemini):
                     "text": '''[
                         {"id": 100, "amount": 500, "currency": "INR", "transaction_verb": "debit", "counterparty": "Rahul", "confidence": 0.95}, 
                         {"id": 101, "amount": 1200, "currency": "INR", "transaction_verb": "debit", "reference": "rent", "confidence": 0.98}, 
-                        {"id": 102, "amount": null, "currency": null, "transaction_verb": "credit", "counterparty": "John", "confidence": 0.85}
+                        {"id": 102, "amount": 0.0, "currency": "INR", "transaction_verb": "credit", "counterparty": "John", "confidence": 0.85}
                     ]'''
                 }]
             }
@@ -47,6 +47,7 @@ def test_llm_extraction_integration(mock_gemini):
     
     for idx, text in enumerate(test_messages):
         payload = PreprocessedPayload(
+            tenant_id=1,
             raw_message_id=idx + 100,
             participant_id=1,
             group_id=None,
@@ -67,7 +68,7 @@ def test_llm_extraction_integration(mock_gemini):
 
     assert len(candidates_for_ai) > 0, "No candidates passed the scoring threshold."
 
-    raw_response = process_extraction_batch(candidates_for_ai)
+    raw_response = process_extraction_batch(candidates_for_ai, tenant_id=1)
     candidate_ids = [str(c.raw_message_id) for c in candidates_for_ai]
     extracted_data_map = parse_batch_response(raw_response, candidate_ids, "int_test_batch")
     

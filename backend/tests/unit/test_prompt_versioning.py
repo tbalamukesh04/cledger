@@ -10,6 +10,7 @@ from app.ai.prompts.prompt_registry import PromptRegistry
 
 class DummyCandidate:
     def __init__(self, raw_message_id, normalized_text):
+        self.tenant_id = 1
         self.raw_message_id = raw_message_id
         self.normalized_text = normalized_text
         self.normalized_timestamp = datetime.now(timezone.utc)
@@ -45,7 +46,7 @@ def test_prompt_version_tracking_and_update(mock_gemini_client):
             ])}]}}]
         }
         
-        service_response_v1 = process_extraction_batch(candidates)
+        service_response_v1 = process_extraction_batch(candidates, tenant_id=1)
         parsed_results_v1 = parse_batch_response(service_response_v1, candidate_ids, "batch-111")
         
         assert service_response_v1["metadata"]["prompt_version"] == "v1.1"
@@ -65,7 +66,7 @@ def test_prompt_version_tracking_and_update(mock_gemini_client):
             ])}]}}]
         }
         
-        service_response_v2 = process_extraction_batch(candidates)
+        service_response_v2 = process_extraction_batch(candidates, tenant_id=1)
         parsed_results_v2 = parse_batch_response(service_response_v2, candidate_ids, "batch-222")
         
         assert service_response_v2["metadata"]["prompt_version"] == "v1.2"

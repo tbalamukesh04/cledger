@@ -15,6 +15,10 @@ from app.models.transaction_audit import TransactionAudit, TransactionAuditActio
 from app.crud.transaction_crud import create_transaction, update_transaction
 from app.utils.transaction_snapshot import serialize_transaction_snapshot
 
+# Explicit imports to allow SQLAlchemy mapper to resolve string relationships globally
+from app.models.users import Users
+from app.models.businesses import Businesses
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -154,6 +158,7 @@ def test_audit_entry_created_on_transaction_update():
         update_transaction(
             db=db,
             transaction_id=txn.id,
+            tenant_id=1,
             update_data={"confidence": 0.75, "status": TransactionStatus.REVIEW_NEEDED},
             commit=True,
             actor_identifier="worker-test",
@@ -204,6 +209,7 @@ def test_audit_entry_created_on_manual_correction():
         update_transaction(
             db=db,
             transaction_id=txn.id,
+            tenant_id=1,
             update_data={"status": TransactionStatus.CORRECTED, "remarks": "Manually corrected by admin"},
             commit=True,
             actor_identifier="admin-user",
@@ -303,6 +309,7 @@ def test_audit_entry_created_on_invalidation():
         update_transaction(
             db=db,
             transaction_id=txn.id,
+            tenant_id=1,
             update_data={"status": TransactionStatus.INVALIDATED, "remarks": "Marked invalid by admin"},
             commit=True,
             actor_identifier="admin-user",

@@ -64,10 +64,7 @@ def test_parse_noisy_unstructured_message(mock_generate, mock_backoff, parser):
     
     result = parser.parse_single("Hey, did you watch the match yesterday?", "2024-01-01T12:00:00Z")
     
-    assert result is not None
-    assert result.amount is None
-    assert result.confidence == 0.0
-    assert mock_generate.call_count == 1
+    assert result is None
 
 @patch('app.ai.ai_parser.apply_exponential_backoff')
 @patch('app.ai.ai_parser.GeminiClient.generate_content')

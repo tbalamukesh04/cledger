@@ -2,38 +2,34 @@
   "object": "whatsapp_business_account",
   "entry": [
     {
-      "id": "26746711521588140",
+      "id": "idem_test_waba",
       "changes": [
         {
           "value": {
-            "messaging_product": "whatsapp",
             "metadata": {
-              "display_phone_number": "919363272643",
-              "phone_number_id": "1042163852312259"
+              "display_phone_number": "26099900514",
+              "phone_number_id": "idem_test_phone"
             },
             "contacts": [
               {
                 "profile": {
-                  "name": "Tejas"
+                  "name": "Idemp Tester"
                 },
-                "wa_id": "918056646050",
-                "user_id": "IN.1282927097283175"
+                "wa_id": "26099900514"
               }
             ],
             "messages": [
               {
-                "from": "918056646050",
-                "from_user_id": "IN.1282927097283175",
-                "id": "wamid.HBgMOTE4MDU2NjQ2MDUwFQIAEhggQUMzQzhFQ0U4ODZGNTdDN0JENzQ0OTRGRTkxNzg1QTQA",
-                "timestamp": "1781428348",
+                "from": "26099900514",
+                "type": "text",
+                "timestamp": "1782209514",
                 "text": {
-                  "body": "Hii"
+                  "body": "Test Retry"
                 },
-                "type": "text"
+                "id": "wamid.RETRY_TEST_1782209514"
               }
             ]
-          },
-          "field": "messages"
+          }
         }
       ]
     }

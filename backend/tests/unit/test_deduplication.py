@@ -45,15 +45,27 @@ def test_worker_already_processed_skip(mock_session_local):
     mock_query.options.return_value = mock_query
     mock_query.filter.return_value = mock_query
     
-    # Simulate a message that has already been processed
+   # Simulate a message that has already been processed
     mock_msg = MagicMock()
     mock_msg.id = 999
+    mock_msg.tenant_id = 1
     mock_msg.processed = True
     mock_query.all.return_value = [mock_msg]
     
-    mock_job = MagicMock()
-    mock_job.job_id = "job_123"
-    mock_job.raw_message_id = 999
+    from app.schemas.jobs import WebhookJobPayload
+    mock_job = WebhookJobPayload(
+        job_id="job_123",
+        tenant_id=1,
+        business_id="test_waba",
+        phone_number_id="test_phone",
+        message_id="wamid.999",
+        raw_message_id=999,
+        participant_id=1,
+        group_id=1,
+        webhook_event_type="text",
+        message_timestamp=datetime.now(timezone.utc),
+        ingestion_time=datetime.now(timezone.utc)
+    )
     
     # Worker takes a list of jobs now
     results = process_webhook_batch([mock_job])
@@ -87,16 +99,27 @@ def test_worker_content_hash_collision(mock_session_local):
     mock_msg.received_at = datetime.now(timezone.utc)
     mock_msg.message_id = "mock_wamid_123"
     mock_msg.hash = "old_hash"
+    mock_msg.tenant_id = 1
     
     mock_query.all.return_value = [mock_msg]
     
     # Force an IntegrityError when the worker attempts to commit the batch
     mock_db.commit.side_effect = IntegrityError("duplicate key", params={}, orig=Exception())
     
-    mock_job = MagicMock()
-    mock_job.job_id = "job_123"
-    mock_job.raw_message_id = 999
-    mock_job.webhook_event_type = "text"
+    from app.schemas.jobs import WebhookJobPayload
+    mock_job = WebhookJobPayload(
+        job_id="job_123",
+        tenant_id=1,
+        business_id="test_waba",
+        phone_number_id="test_phone",
+        message_id="mock_wamid_123",
+        raw_message_id=999,
+        participant_id=1,
+        group_id=1,
+        webhook_event_type="text",
+        message_timestamp=datetime.now(timezone.utc),
+        ingestion_time=datetime.now(timezone.utc)
+    )
     
     results = process_webhook_batch([mock_job])
         
@@ -126,13 +149,24 @@ def test_worker_missing_keys_graceful_handling(mock_session_local):
     mock_msg.message_id = "wamid.null_test"
     mock_msg.hash = "old_hash"
     mock_msg.parsing_meta = None
+    mock_msg.tenant_id = 1
     
     mock_query.all.return_value = [mock_msg]
     
-    mock_job = MagicMock()
-    mock_job.job_id = "job_123"
-    mock_job.raw_message_id = 999
-    mock_job.webhook_event_type = "text"
+    from app.schemas.jobs import WebhookJobPayload
+    mock_job = WebhookJobPayload(
+        job_id="job_123",
+        tenant_id=1,
+        business_id="test_waba",
+        phone_number_id="test_phone",
+        message_id="wamid.null_test",
+        raw_message_id=999,
+        participant_id=1,
+        group_id=1,
+        webhook_event_type="text",
+        message_timestamp=datetime.now(timezone.utc),
+        ingestion_time=datetime.now(timezone.utc)
+    )
     
     # Process the job
     results = process_webhook_batch([mock_job])

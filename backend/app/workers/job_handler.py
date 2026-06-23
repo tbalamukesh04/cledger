@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 import os
 from typing import List, Dict
+from collections import defaultdict
 
 from sqlalchemy.orm import joinedload, Session 
 from sqlalchemy.exc import IntegrityError, OperationalError, DBAPIError
@@ -141,6 +142,12 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 job_results[job.job_id] = "dlq"
                 continue
 
+            # ENFORCE TENANT BOUNDARY: Reject if RawMessage belongs to a different tenant
+            if getattr(raw_msg, "tenant_id", None) != job.tenant_id:
+                log_error(LogEvent.SECURITY_VIOLATION, error=ValueError("Cross-tenant contamination attempt"), message=f"RawMessage {job.raw_message_id} belongs to tenant {getattr(raw_msg, 'tenant_id')}, but job payload claims {job.tenant_id}", level=logging.CRITICAL)
+                job_results[job.job_id] = "dlq"
+                continue
+
             raw_text = _extract_message_text(raw_msg.raw_json)
             normalized_text = normalize_whatsapp_text(raw_text)
             
@@ -179,11 +186,11 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
 
             if is_revoke:
                 target_wamid = original_wamid or raw_msg.message_id
-                orig_raw = db.query(RawMessages).filter(RawMessages.message_id == target_wamid).first()
+                orig_raw = db.query(RawMessages).filter(RawMessages.message_id == target_wamid, RawMessages.tenant_id == job.tenant_id).first()
                 if orig_raw:
-                    orig_txn = db.query(Transactions).filter(Transactions.raw_message_id == orig_raw.id).first()
+                    orig_txn = db.query(Transactions).filter(Transactions.raw_message_id == orig_raw.id, Transactions.tenant_id == job.tenant_id).first()
                     if orig_txn:
-                        invalidate_transaction_service(db, orig_txn.id, reason="Message revoked on WhatsApp", actor_identifier=WORKER_IDENTIFIER)
+                        invalidate_transaction_service(db, orig_txn.id, tenant_id=job.tenant_id, reason="Message revoked on WhatsApp", actor_identifier=WORKER_IDENTIFIER)
                 raw_msg.processed = True
                 raw_msg.processing_status = "REVOKED"
                 raw_msg.processing_started_at = processing_started_at
@@ -254,8 +261,7 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             return job_results
 
         # 3. AI EXTRACTION (Batch Call - Only for candidates)
-        batch_id = str(uuid.uuid4())
-
+        batch_id = str(uuid.uuid4()) # Define at the outer scope to prevent UnboundLocalError on 100% cache hits
         candidates_for_ai_misses = []
         extracted_data_map = {}
 
@@ -274,40 +280,48 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
         batch_failed = False
 
         if candidates_for_ai_misses:
-            candidate_miss_ids = [str(c.raw_message_id) for c in candidates_for_ai_misses]
-            miss_hash_map = {str(c.raw_message_id): c.text_hash for c in candidates_for_ai_misses}
+            misses_by_tenant = defaultdict(list)
+            for c in candidates_for_ai_misses:
+                c_job = valid_jobs_map[c.raw_message_id]
+                c.tenant_id = c_job.tenant_id  # Inject for validation in AI extraction service
+                misses_by_tenant[c_job.tenant_id].append(c)
 
-            timer = LogTimer()
-            gemini_response_status = "success"
+            for tenant_id, tenant_misses in misses_by_tenant.items():
+                batch_id = str(uuid.uuid4())
+                candidate_miss_ids = [str(c.raw_message_id) for c in tenant_misses]
+                miss_hash_map = {str(c.raw_message_id): c.text_hash for c in tenant_misses}
 
-            try:
-                raw_llm_response = process_extraction_batch(candidates_for_ai_misses)
-                llm_extracted_data = parse_batch_response(raw_llm_response, candidate_miss_ids, batch_id)
-                extracted_data_map.update(llm_extracted_data)
+                timer = LogTimer()
+                gemini_response_status = "success"
+
+                try:
+                    raw_llm_response = process_extraction_batch(tenant_misses, tenant_id=tenant_id)
+                    llm_extracted_data = parse_batch_response(raw_llm_response, candidate_miss_ids, batch_id)
+                    extracted_data_map.update(llm_extracted_data)
+                    
+                    for msg_id, ext_result in llm_extracted_data.items():
+                        if ext_result:
+                            text_hash = miss_hash_map.get(msg_id)
+                            if text_hash:
+                                cache_extraction_result(text_hash, ext_result)
+                                log_event(LogEvent.JOB_STARTED, "Extraction Result Cached", raw_message_id=msg_id)
+
+                except RETRYABLE_EXCEPTIONS as e:
+                    raise e
                 
-                for msg_id, ext_result in llm_extracted_data.items():
-                    if ext_result:
-                        text_hash = miss_hash_map.get(msg_id)
-                        if text_hash:
-                            cache_extraction_result(text_hash, ext_result)
-                            log_event(LogEvent.JOB_STARTED, "Extraction Result Cached", raw_message_id=msg_id)
+                except Exception as e:
+                    gemini_response_status = "failed"
+                    log_error(LogEvent.LLM_ERROR, error=e, message="AI Batch extraction failed completely for tenant", batch_id=batch_id, tenant_id=tenant_id)
 
-            except RETRYABLE_EXCEPTIONS as e:
-                raise e
-            
-            except Exception as e:
-                gemini_response_status = "failed"
-                log_error(LogEvent.LLM_ERROR, error=e, message="AI Batch extraction failed completely", batch_id=batch_id)
-                # Do not set batch_failed = True. We want to route these deterministic LLM failures to the review queue, not infinite retry loops.
-
-            log_event(
-                LogEvent.JOB_STARTED,
-                "Batch extraction routine completed",
-                batch_id=batch_id,
-                batch_size=len(candidates_for_ai_misses),
-                duration_ms=timer.get_duration_ms(),
-                status=gemini_response_status
-            )
+                log_event(
+                    LogEvent.JOB_STARTED,
+                    "Batch extraction routine completed",
+                    batch_id=batch_id,
+                    batch_size=len(tenant_misses),
+                    tenant_id=tenant_id,
+                    duration_ms=timer.get_duration_ms(),
+                    status=gemini_response_status
+                )
 
         for preprocessed_data in candidates_for_ai:
             raw_msg = raw_msg_map[preprocessed_data.raw_message_id]
@@ -350,10 +364,11 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
             if extraction_status == "REVERSAL_PROCESSED":
                 last_txn = db.query(Transactions).join(RawMessages).filter(
                     RawMessages.group_id == preprocessed_data.group_id,
+                    Transactions.tenant_id == job.tenant_id,
                     Transactions.status != TransactionStatus.INVALIDATED
                 ).order_by(Transactions.created_at.desc()).first()
                 if last_txn:
-                    invalidate_transaction_service(db, last_txn.id, reason="AI Reversal Intent Detected", actor_identifier=WORKER_IDENTIFIER)
+                    invalidate_transaction_service(db, last_txn.id, tenant_id=job.tenant_id, reason="AI Reversal Intent Detected", actor_identifier=WORKER_IDENTIFIER)
                 raw_msg.is_transaction = True
 
             elif extraction_status == "SUCCESS":
@@ -398,9 +413,9 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                 remarks_text = getattr(extraction_result, "description", getattr(extraction_result, "remarks", None))
                 
                 if mutation_ctx and mutation_ctx.get("type") == "edit" and mutation_ctx.get("original_wamid"):
-                    orig_raw = db.query(RawMessages).filter(RawMessages.message_id == mutation_ctx["original_wamid"]).first()
+                    orig_raw = db.query(RawMessages).filter(RawMessages.message_id == mutation_ctx["original_wamid"], RawMessages.tenant_id == job.tenant_id).first()
                     if orig_raw:
-                        orig_txn = db.query(Transactions).filter(Transactions.raw_message_id == orig_raw.id).first()
+                        orig_txn = db.query(Transactions).filter(Transactions.raw_message_id == orig_raw.id, Transactions.tenant_id == job.tenant_id).first()
                         if orig_txn:
                             correction_data = {
                                 "amount": validated_amount,
@@ -409,13 +424,13 @@ def process_webhook_batch(jobs: List[WebhookJobPayload]) -> Dict[str, str]:
                                 "txn_date": normalized_txn_date,
                                 "remarks": remarks_text
                             }
-                            correct_transaction_service(db, orig_txn.id, correction_data, actor_identifier=WORKER_IDENTIFIER)
+                            correct_transaction_service(db, orig_txn.id, tenant_id=job.tenant_id, correction_data=correction_data, actor_identifier=WORKER_IDENTIFIER)
                             txn_db_status = TransactionStatus.CORRECTED
                             log_event(LogEvent.TRANSACTION_UPDATED, "Transaction Corrected via Webhook Edit", transaction_id=orig_txn.id)
                 
                 if txn_db_status in [TransactionStatus.PARSED, TransactionStatus.REVIEW_NEEDED]:
                     txn_data = {
-                        "tenant_id": getattr(raw_msg, "tenant_id", None),
+                        "tenant_id": job.tenant_id,
                         "raw_message_id": raw_msg.id,
                         "amount": validated_amount,  
                         "currency": normalized_currency,

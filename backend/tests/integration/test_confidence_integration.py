@@ -79,6 +79,10 @@ def test_worker_pipeline_confidence_persistence(
     # Setup incoming job payload
     job = WebhookJobPayload(
             job_id="job_1",
+            tenant_id=1,
+            business_id="test_waba",
+            phone_number_id="test_phone",
+            message_id="wamid.123",
             raw_message_id=1,
             participant_id=1,
             group_id=1,

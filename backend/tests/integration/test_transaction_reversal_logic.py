@@ -114,6 +114,7 @@ def test_worker_protection_rule(db_session, auth_headers):
     
     # 2. Worker attempts to reprocess the same message with a different amount
     worker_payload = {
+        "tenant_id": 1,
         "raw_message_id": raw_msg.id,
         "amount": Decimal("50.00"), 
         "currency": "USD",
@@ -146,6 +147,7 @@ def test_worker_protection_rule_invalidated(db_session, auth_headers):
     
     # 2. Worker attempts to reprocess the same message
     worker_payload = {
+        "tenant_id": 1,
         "raw_message_id": raw_msg.id,
         "amount": Decimal("100.00"), 
         "currency": "USD",

@@ -36,15 +36,19 @@ def test_malformed_json_rejection_step_5(mock_extraction, db_session):
     db_session.query(RawMessages).filter(RawMessages.id == 9001).delete()
     db_session.commit()
 
-    raw = RawMessages(id=9001, sender_id=1, group_id=1, message_id="wamid.9001", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Paid 150 ZMW for lunch"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9001", processed=False)
+    raw = RawMessages(tenant_id=1, id=9001, sender_id=1, group_id=1, message_id="wamid.9001", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Paid 150 ZMW for lunch"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9001", processed=False)
     db_session.add(raw)
     db_session.commit()
 
     job = WebhookJobPayload(
         job_id="test-job-9001", 
+        tenant_id=1,
+        business_id="test_waba",
+        phone_number_id="test_phone",
+        message_id="wamid.9001",
         raw_message_id=9001, 
-        webhook_event_type="message", 
-        message_timestamp="2026-05-29T05:00:00Z",
+        webhook_event_type="text", 
+        message_timestamp=datetime.now(timezone.utc),
         participant_id=1,
         group_id=1,
         ingestion_time=datetime.now(timezone.utc)
@@ -78,21 +82,26 @@ def test_strict_schema_enforcement_step_3(mock_extraction, db_session):
     db_session.query(RawMessages).filter(RawMessages.id == 9002).delete()
     db_session.commit()
 
-    raw = RawMessages(id=9002, sender_id=1, group_id=1, message_id="wamid.9002", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Paid 150 ZMW for lunch"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9002", processed=False)
+    raw = RawMessages(tenant_id=1, id=9002, sender_id=1, group_id=1, message_id="wamid.9002", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Paid 150 ZMW for lunch"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9002", processed=False)
     db_session.add(raw)
     db_session.commit()
 
     job = WebhookJobPayload(
         job_id="test-job-9002", 
+        tenant_id=1,
+        business_id="test_waba",
+        phone_number_id="test_phone",
+        message_id="wamid.9002",
         raw_message_id=9002, 
-        webhook_event_type="message", 
+        webhook_event_type="text", 
         message_timestamp="2026-05-29T05:00:00Z",
         participant_id=1,
         group_id=1,
         ingestion_time=datetime.now(timezone.utc)
     )
+    
     process_webhook_batch([job])
-
+    
     raw = db_session.query(RawMessages).filter(RawMessages.id == 9002).first()
     assert raw.processing_status == "review_needed"
     
@@ -121,14 +130,18 @@ def test_low_confidence_routing_step_4(mock_extraction, db_session):
     db_session.query(RawMessages).filter(RawMessages.id == 9003).delete()
     db_session.commit()
 
-    raw = RawMessages(id=9003, sender_id=1, group_id=1, message_id="wamid.9003", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Paid 150 ZMW for lunch"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9003", processed=False)
+    raw = RawMessages(tenant_id=1, id=9003, sender_id=1, group_id=1, message_id="wamid.9003", received_at=datetime.now(timezone.utc), raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Paid 150 ZMW for lunch"}, "timestamp": "1780030800"}]}}]}]}, hash="hash_9003", processed=False)
     db_session.add(raw)
     db_session.commit()
 
     job = WebhookJobPayload(
         job_id="test-job-9003", 
+        tenant_id=1,
+        business_id="test_waba",
+        phone_number_id="test_phone",
+        message_id="wamid.9003",
         raw_message_id=9003, 
-        webhook_event_type="message", 
+        webhook_event_type="text", 
         message_timestamp="2026-05-29T05:00:00Z",
         participant_id=1,
         group_id=1,

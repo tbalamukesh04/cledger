@@ -34,9 +34,13 @@ class MockExtractionResult:
 
 def test_worker_transaction_persistence_integration():
     """
-    Validates the end-to-end flow: 
+    Validates the end-to-end flow:
     Raw Message -> Preprocessing -> AI (Mocked) -> Status Routing -> Persistence.
     """
+    # Explicitly import connected models so SQLAlchemy's mapper registry can resolve string relationships
+    from app.models.users import Users
+    from app.models.businesses import Businesses
+    
     db = SessionLocal()
     
     # --- 1. SETUP: Create required Foreign Key entities ---
@@ -50,19 +54,32 @@ def test_worker_transaction_persistence_integration():
     if not group:
         group = Groups(group_id="integration_group_e2e", groupname="Integration Group")
         db.add(group)
-        
+
+    test_business = db.query(Businesses).filter_by(meta_waba_id="worker_e2e_waba").first()
+    if not test_business:
+        test_business = Businesses(
+            name="Worker E2E Enterprise",
+            slug="worker-e2e",
+            meta_waba_id="worker_e2e_waba",
+            meta_phone_number_id="worker_e2e_phone",
+            is_active=True
+        )
+        db.add(test_business)
+
     db.commit()
+    db.refresh(test_business)
 
     # Create a completely fresh raw message mimicking a webhook payload
     raw_msg = RawMessages(
+        tenant_id=test_business.id,
         sender_id=participant.id,
         group_id=group.id,
         message_id=f"wamid.integration_{datetime.now().timestamp()}",
-        received_at=datetime.now(timezone.utc),
+        received_at=datetime.now(timezone.utc),    
         raw_json={
             "entry": [{"changes": [{"value": {"messages": [{
-                "type": "text", 
-                "text": {"body": "Bought groceries for 150 ZMW"}, 
+                "type": "text",
+                "text": {"body": "Bought groceries for 150 ZMW"},
                 "timestamp": str(int(datetime.now().timestamp()))
             }]}}]}]
         },
@@ -76,6 +93,10 @@ def test_worker_transaction_persistence_integration():
     # Construct the Job Payload that the Redis Queue would normally pass
     job = WebhookJobPayload(
             job_id="job_integration_001",
+            tenant_id=test_business.id,
+            business_id="worker_e2e_waba",
+            phone_number_id="worker_e2e_phone",
+            message_id=raw_msg.message_id,
             raw_message_id=raw_msg.id,
             participant_id=participant.id,
             group_id=group.id,

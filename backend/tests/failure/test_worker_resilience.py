@@ -21,7 +21,11 @@ client = TestClient(app)
 def create_dummy_job(job_id: str) -> dict:
     return {
         "job_id": job_id,
-        "raw_message_id": 999,
+        "tenant_id": 1,
+        "business_id": "test_waba",
+        "phone_number_id": "test_phone",
+        "message_id": f"wamid.{job_id}",
+        "raw_message_id": 100,
         "participant_id": 1,
         "group_id": 1,
         "message_timestamp": datetime.now(timezone.utc).isoformat(),

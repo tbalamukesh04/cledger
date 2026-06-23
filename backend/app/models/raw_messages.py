@@ -5,6 +5,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
+from app.models.businesses import Businesses
 
 class RawMessages(Base, TimestampMixin):
     __tablename__ = "raw_messages"

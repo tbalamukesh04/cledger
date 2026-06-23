@@ -13,7 +13,10 @@ def create_audit_entry(
     action: TransactionAuditAction,
     actor_identifier: str,
     new_value: dict,
-    old_value: Optional[dict] = None
+    old_value: Optional[dict] = None,
+    tenant_id: Optional[int] = None,
+    business_id: Optional[str] = None,
+    actor_user_id: Optional[str] = None
 ) -> TransactionAudit:
     """
     Create a new transaction audit entry.
@@ -23,7 +26,10 @@ def create_audit_entry(
         action=action,
         new_value=new_value,
         old_value=old_value,
-        actor_identifier=actor_identifier
+        actor_identifier=actor_identifier,
+        tenant_id=tenant_id,
+        business_id=business_id,
+        actor_user_id=actor_user_id
     )
     db.add(audit_entry)
     db.flush()
@@ -33,6 +39,9 @@ def create_audit_entry(
         "transaction_id": transaction_id,
         "action": action.value,
         "actor_identifier": actor_identifier,
+        "tenant_id": tenant_id,
+        "business_id": business_id,
+        "actor_user_id": actor_user_id
         })
 
     return audit_entry

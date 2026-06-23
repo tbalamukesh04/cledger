@@ -66,6 +66,9 @@ def setup_test_data():
         job = WebhookJobPayload(
             job_id=str(uuid.uuid4()),
             tenant_id=tenant_id,
+            business_id="test_waba",
+            phone_number_id="test_phone",
+            message_id=raw_msg.message_id,
             raw_message_id=raw_msg.id,
             participant_id=participant.id,
             group_id=group.id,

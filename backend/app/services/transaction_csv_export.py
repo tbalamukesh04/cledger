@@ -3,7 +3,7 @@ import io
 from typing import Iterable, Generator, List
 from app.models.transactions import Transactions
 
-def generate_transaction_csv_rows(transactions: Iterable[Transactions], headers: List[str]) -> Generator[str, None, None]:
+def generate_transaction_csv_rows(transactions: Iterable[Transactions], headers: List[str], tenant_id: int) -> Generator[str, None, None]:
     """
     Generate CSV rows from transactions.
     Yields in larger chunks to optimize ASGI throughput and completely bypass middleware buffering delays.
@@ -20,6 +20,9 @@ def generate_transaction_csv_rows(transactions: Iterable[Transactions], headers:
     count = 0
     # 2. Iterate through the actual transaction data
     for txn in transactions:
+        if txn.tenant_id != tenant_id:
+            raise ValueError(f"Cross-tenant data export violation detected for Transaction ID {txn.id}. Expected tenant {tenant_id}.")
+            
         raw_msg = txn.raw_message
         sender = raw_msg.sender if raw_msg else None
         

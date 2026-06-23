@@ -11,10 +11,14 @@ logger = logging.getLogger(__name__)
 def create_transaction_audit(
     db: Session, 
     transaction: Transactions,
+    tenant_id: int,
     action: TransactionAuditAction,
     performed_by: str,
     old_snapshot: dict | None = None
 ) -> None:
+    if getattr(transaction, 'tenant_id', None) != tenant_id:
+        raise ValueError(f"Tenant isolation breach: Cannot audit transaction {transaction.id} for tenant {tenant_id}.")
+
     try:
         new_snapshot = serialize_transaction_snapshot(transaction)
         create_audit_entry(

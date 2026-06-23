@@ -103,7 +103,7 @@ async def export_transactions_csv(
         batch_size=1000
     )
 
-    csv_generator = generate_transaction_csv_rows(transaction_stream, EXPORT_CSV_HEADERS)
+    csv_generator = generate_transaction_csv_rows(transaction_stream, EXPORT_CSV_HEADERS, tenant_id=tenant_id)
 
     return StreamingResponse(
         content=csv_generator,
@@ -207,6 +207,7 @@ async def review_transaction(
             updated_transaction = correct_transaction_service(
                 db = db,
                 transaction_id= transaction_id,
+                tenant_id= tenant_id,
                 correction_data = review_request.corrected_fields,
                 actor_identifier = actor_identifier
             )
@@ -224,6 +225,7 @@ async def review_transaction(
             updated_transaction = invalidate_transaction_service(
                 db = db,
                 transaction_id= transaction_id,
+                tenant_id= tenant_id,
                 reason= review_request.reason,
                 actor_identifier = actor_identifier
             )
@@ -236,7 +238,7 @@ async def review_transaction(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         
-    audit_history = get_transaction_audit_history(db, transaction_id=transaction_id)
+    audit_history = get_transaction_audit_history(db, transaction_id=transaction_id, tenant_id=tenant_id)
     
     return {
         "transaction": transaction,

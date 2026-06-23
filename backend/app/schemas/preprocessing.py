@@ -7,6 +7,7 @@ class PreprocessedPayload(BaseModel):
     Structured object containing the normalized message data and metadata 
     prepared for downstream classification and transaction parsing.
     """
+    tenant_id: Optional[int] = Field(None, description="Tenant isolation boundary ID")
     raw_message_id: int = Field(..., description="Internal database ID of the raw message record")
     participant_id: int = Field(..., description="Internal database ID of the sender")
     sender_phone: Optional[str] = Field(None, description="WhatsApp phone number of the sender")

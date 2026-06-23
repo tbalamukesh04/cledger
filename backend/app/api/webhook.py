@@ -184,7 +184,7 @@ async def receive_webhook(
                                 
                                 job_payload = WebhookJobPayload(
                                     tenant_id=tenant_id,
-                                    business_id=business_id,
+                                    business_id=waba_id,
                                     phone_number_id=phone_number_id,
                                     message_id=msg_id,
                                     payload=message,

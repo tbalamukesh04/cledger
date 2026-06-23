@@ -16,6 +16,18 @@ from app.database.redis_client import WEBHOOK_ACTIVE_QUEUE, WEBHOOK_QUEUE_NAME
 
 pytestmark = pytest.mark.failure
 
+from app.models.businesses import Businesses
+
+@pytest.fixture(autouse=True)
+def seed_test_tenant(db_session):
+    tenant = db_session.query(Businesses).filter_by(id=1).first()
+    if not tenant:
+        tenant = Businesses(id=1, name="Global Test Tenant", slug="global-test", is_active=True, meta_waba_id="test_waba", meta_phone_number_id="test_phone")
+        db_session.add(tenant)
+        db_session.commit()
+
+pytestmark = pytest.mark.failure
+
 def test_failure_module_discovery():
     """Basic test to ensure pytest correctly discovers the failure module."""
     assert True
@@ -23,6 +35,11 @@ def test_failure_module_discovery():
 class TestDatabaseFailures:
     def test_db_commit_operational_error(self, db_session, mock_redis, mock_gemini):
         """Simulate a database connection drop during the final batch commit."""
+        # Add this to explicitly ensure the tenant exists before creating RawMessages!
+        from app.models.businesses import Businesses
+        if not db_session.query(Businesses).filter_by(id=1).first():
+            db_session.add(Businesses(id=1, name="Global Test", slug="global", is_active=True, meta_waba_id="test_waba", meta_phone_number_id="test_phone"))
+            db_session.commit()
         mock_redis.flushall()
         test_group = Groups(group_id="test_group_db_fail", groupname="Test Group")
         test_participant = Participants(phone="6666666666", displayname="Test User 4")
@@ -31,6 +48,7 @@ class TestDatabaseFailures:
 
         msg_id = f"wamid.db_fail_test"
         raw_msg = RawMessages(
+            tenant_id=1,
             group_id=test_group.id,
             sender_id=test_participant.id,
             message_id=msg_id,
@@ -46,6 +64,10 @@ class TestDatabaseFailures:
 
         job_payload = WebhookJobPayload(
             job_id=f"job_db_fail_{raw_msg_id}",
+            tenant_id=1,
+            business_id="test_waba",
+            phone_number_id="test_phone",
+            message_id=msg_id,
             raw_message_id=raw_msg_id,
             webhook_event_type="messages",
             message_timestamp=datetime.now(timezone.utc),
@@ -101,6 +123,7 @@ class TestRedisFailures:
 
         msg_id = f"wamid.timeout_test"
         raw_msg = RawMessages(
+            tenant_id=1,
             group_id=test_group.id,
             sender_id=test_participant.id,
             message_id=msg_id,
@@ -116,6 +139,10 @@ class TestRedisFailures:
         
         job_payload = WebhookJobPayload(
             job_id=f"job_timeout_{raw_msg_id}", # Keep your existing job ID string here
+            tenant_id=1,
+            business_id="test_waba",
+            phone_number_id="test_phone",
+            message_id=msg_id,
             raw_message_id=raw_msg_id,
             webhook_event_type="messages",
             message_timestamp=datetime.now(timezone.utc),
@@ -148,6 +175,11 @@ class TestLLMFailures:
 class TestWorkerInterruption:
     def test_worker_crash_and_recovery(self, db_session, mock_redis, mock_gemini):
         """Simulate a hard worker crash mid-job, and verify recovery and idempotency."""
+        # Add this to explicitly ensure the tenant exists before creating RawMessages!
+        from app.models.businesses import Businesses
+        if not db_session.query(Businesses).filter_by(id=1).first():
+            db_session.add(Businesses(id=1, name="Global Test", slug="global", is_active=True, meta_waba_id="test_waba", meta_phone_number_id="test_phone"))
+            db_session.commit()
         mock_redis.flushall()
         # 1. Setup DB state
         test_group = Groups(group_id='test_group_crash', groupname="Test Group Crash", created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc))
@@ -160,9 +192,10 @@ class TestWorkerInterruption:
             "entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": "Paid 500 for recovery test"}, "timestamp": "1710000000"}]}}]}]
         }
         raw_msg = RawMessages(
-            group_id = test_group.id, 
-            sender_id = test_participant.id,
-            message_id = msg_id,
+            tenant_id=1,
+            group_id=test_group.id,
+            sender_id=test_participant.id,
+            message_id=msg_id,
             raw_json = raw_json,
             received_at = datetime.now(timezone.utc),
             processed = False,
@@ -175,12 +208,16 @@ class TestWorkerInterruption:
 
         job_payload = WebhookJobPayload(
             job_id=f"job_{raw_msg_id}",
+            tenant_id=1,
+            business_id="test_waba",
+            phone_number_id="test_phone",
+            message_id=msg_id,
             raw_message_id=raw_msg_id,
             webhook_event_type="messages",
             message_timestamp=datetime.now(timezone.utc),
-            participant_id=test_participant.id,
+            participant_id=test_participant.id,        
             group_id=test_group.id,
-            ingestion_time=datetime.now(timezone.utc)
+            ingestion_time=datetime.now(timezone.utc)  
         )
         payload_str = job_payload.model_dump_json()
 
@@ -256,6 +293,11 @@ class TestWorkerInterruption:
 
     def test_system_restart_pending_queue(self, db_session, mock_redis, mock_gemini):
         """Simulate a system restart with multiple jobs already waiting in the main queue."""
+        # Add this to explicitly ensure the tenant exists before creating RawMessages!
+        from app.models.businesses import Businesses
+        if not db_session.query(Businesses).filter_by(id=1).first():
+            db_session.add(Businesses(id=1, name="Global Test", slug="global", is_active=True, meta_waba_id="test_waba", meta_phone_number_id="test_phone"))
+            db_session.commit()
         mock_redis.flushall()
         # 1. Setup DB state for multiple incoming messages while offline
         test_group = Groups(group_id="test_group_restart", groupname="Test Group")
@@ -267,9 +309,10 @@ class TestWorkerInterruption:
         for i in range(3):
             msg_id = f"wamid.pending_{i}"
             raw_msg = RawMessages(
-                group_id=test_group.id,
-                sender_id=test_participant.id,
-                message_id=msg_id,
+            tenant_id=1,
+            group_id=test_group.id,
+            sender_id=test_participant.id,
+            message_id=msg_id,
                 raw_json={"entry": [{"changes": [{"value": {"messages": [{"type": "text", "text": {"body": f"Paid {100 + i}"}, "timestamp": "1710000000"}]}}]}]},
                 received_at=datetime.now(timezone.utc),
                 processed=False,
@@ -284,6 +327,10 @@ class TestWorkerInterruption:
         for raw_msg in raw_messages:
             job_payload = WebhookJobPayload(
                 job_id=f"job_pending_{raw_msg.id}",
+                tenant_id=1,
+                business_id="test_waba",
+                phone_number_id="test_phone",
+                message_id=msg_id,
                 raw_message_id=raw_msg.id,
                 webhook_event_type="messages",
                 message_timestamp=datetime.now(timezone.utc),
@@ -363,6 +410,7 @@ class TestIdempotencySafety:
 
         msg_id = f"wamid.idem_test_1"
         raw_msg = RawMessages(
+            tenant_id=1,
             group_id=test_group.id,
             sender_id=test_participant.id,
             message_id=msg_id,
@@ -377,6 +425,10 @@ class TestIdempotencySafety:
         raw_msg_id = raw_msg.id
         job_payload = WebhookJobPayload(
             job_id=f"job_idem_{raw_msg_id}",
+            tenant_id=1,
+            business_id="test_waba",
+            phone_number_id="test_phone",
+            message_id=msg_id,
             raw_message_id=raw_msg_id,
             webhook_event_type="messages",
             message_timestamp=datetime.now(timezone.utc),
@@ -384,7 +436,6 @@ class TestIdempotencySafety:
             group_id=test_group.id,
             ingestion_time=datetime.now(timezone.utc)
         )
-
         mock_gemini.return_value = {
             "candidates": [{"content": {"parts": [{"text": json.dumps([{        
                 "id": str(raw_msg_id),
@@ -424,6 +475,11 @@ class TestIdempotencySafety:
 class TestFailureObservability:
     def test_failure_logging_and_observability(self, db_session, mock_redis, mock_gemini, caplog):
         """Verify that processing failures are not silent and emit structured logs with context."""
+        # Add this to explicitly ensure the tenant exists before creating RawMessages!
+        from app.models.businesses import Businesses
+        if not db_session.query(Businesses).filter_by(id=1).first():
+            db_session.add(Businesses(id=1, name="Global Test", slug="global", is_active=True, meta_waba_id="test_waba", meta_phone_number_id="test_phone"))
+            db_session.commit()
         import logging
         caplog.set_level(logging.ERROR)
         mock_redis.flushall()
@@ -436,6 +492,7 @@ class TestFailureObservability:
 
         msg_id = f"wamid.log_test"
         raw_msg = RawMessages(
+            tenant_id=1,
             group_id=test_group.id,
             sender_id=test_participant.id,
             message_id=msg_id,
@@ -450,6 +507,10 @@ class TestFailureObservability:
         raw_msg_id = raw_msg.id
         job_payload = WebhookJobPayload(
             job_id=f"job_log_{raw_msg_id}",
+            tenant_id=1,
+            business_id="test_waba",
+            phone_number_id="test_phone",
+            message_id=msg_id,
             raw_message_id=raw_msg_id,
             webhook_event_type="messages",
             message_timestamp=datetime.now(timezone.utc),

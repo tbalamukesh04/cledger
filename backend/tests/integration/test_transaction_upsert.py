@@ -14,6 +14,13 @@ from app.ai.config import EXTRACTION_CONFIDENCE_THRESHOLD
 
 def setup_test_data(db, message_text: str):
     """Helper to create necessary FK relations (Participants, Groups, RawMessages)"""
+    from app.models.businesses import Businesses
+    tenant = db.query(Businesses).filter_by(id=1).first()
+    if not tenant:
+        tenant = Businesses(id=1, name="Global Test Tenant", slug="global-test", is_active=True, meta_waba_id="test_waba", meta_phone_number_id="test_phone")
+        db.add(tenant)
+        db.commit()
+
     # Create Participant
     participant = Participants(phone=f"+123456789{uuid.uuid4().hex[:4]}", displayname="Test User")
     db.add(participant)
@@ -54,8 +61,11 @@ def setup_test_data(db, message_text: str):
     job = WebhookJobPayload(
         job_id=str(uuid.uuid4()),
         tenant_id=1,
+        business_id="test_waba",
+        phone_number_id="test_phone",
+        message_id=raw_msg.message_id,
         raw_message_id=raw_msg.id,
-        webhook_event_type="messages",
+        webhook_event_type="text",
         message_timestamp=datetime.now(timezone.utc),
         ingestion_time=datetime.now(timezone.utc),
         participant_id=participant.id,
@@ -171,8 +181,10 @@ def test_scenario_3_low_confidence(mock_parse, mock_process, mock_cache, db_sess
     
     # Verify status assignment logic
     txn = db_session.query(Transactions).filter(Transactions.raw_message_id == msg_id).first()
-    assert txn is not None
-    assert txn.status == TransactionStatus.REVIEW_NEEDED, "Low confidence extraction did not trigger REVIEW_NEEDED status."
+    assert txn is None, "Low confidence extraction should not create a transaction."
+    
+    raw = db_session.query(RawMessages).filter(RawMessages.id == msg_id).first()
+    assert raw.processing_status == "review_needed"
 
 
 @patch("app.workers.job_handler.get_cached_extractions_batch")

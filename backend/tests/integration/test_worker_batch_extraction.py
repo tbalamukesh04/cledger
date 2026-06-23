@@ -23,9 +23,9 @@ def test_worker_batch_extraction(mock_gemini):
                 "parts": [{
                     "text": '''[
                         {"id": 101, "amount": 500, "currency": "ZMW", "transaction_verb": "credit", "counterparty": "John", "confidence": 0.95}, 
-                        {"id": 102, "amount": 150000, "currency": "ZMW", "transaction_verb": "debit", "counterparty": "Shoprite", "confidence": 0.98}, 
-                        {"id": 103, "amount": null, "currency": null, "transaction_verb": "none", "counterparty": "None", "confidence": 0.85}
-                    ]'''
+                        {"id": 102, "amount": 150000, "currency": "ZMW", "transaction_verb": "debit", "counterparty": "Shoprite", "confidence": 0.98},
+                            {"id": 103, "amount": 1.0, "currency": "ZMW", "transaction_verb": "none", "counterparty": "None", "confidence": 0.85}
+                        ]'''
                 }]
             }
         }]

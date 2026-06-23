@@ -190,6 +190,7 @@ def create_transaction(db: Session, txn_data: Dict[str, Any], commit: bool = Fal
     create_transaction_audit(
         db = db,
         transaction = db_txn,
+        tenant_id = tenant_id,
         action = TransactionAuditAction.CREATED,
         performed_by = actor_identifier,
         old_snapshot = None
@@ -231,6 +232,7 @@ def update_transaction(db: Session, transaction_id: int, tenant_id: int, update_
     create_transaction_audit(
         db = db,
         transaction = db_txn,
+        tenant_id = tenant_id,
         action = action,
         performed_by = actor_identifier,
         old_snapshot = old_snapshot

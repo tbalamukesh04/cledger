@@ -14,6 +14,18 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_app_state(mock_redis):
     app.state.redis = mock_redis
+    from app.database.database import SessionLocal
+    from app.models.businesses import Businesses
+    db = SessionLocal()
+    tenant = db.query(Businesses).filter_by(id=1).first()
+    if not tenant:
+        tenant = Businesses(id=1, name="Global Test", slug="global", is_active=True, meta_waba_id="waba_state", meta_phone_number_id="phone_state")
+        db.add(tenant)
+    else:
+        tenant.meta_waba_id = "waba_state"
+        tenant.meta_phone_number_id = "phone_state"
+    db.commit()
+    db.close()
     yield
 
 import sys
@@ -68,16 +80,20 @@ def get_job_from_queue(mock_redis_instance) -> WebhookJobPayload | None:
 def create_payload(phone: str, msg_id: str, text: str, timestamp: str) -> dict:
     return {
         "object": "whatsapp_business_account",
-        "entry": [{"changes": [{"value": {
-            "contacts": [{"profile": {"name": "State Tester"}, "wa_id": phone}],
-            "messages": [{
-                "from": phone,
-                "id": msg_id,
-                "type": "text",
-                "timestamp": timestamp,
-                "text": {"body": text}
-            }]
-        }}]}]
+        "entry": [{
+            "id": "waba_state",
+            "changes": [{"value": {
+                "metadata": {"display_phone_number": "1234567890", "phone_number_id": "phone_state"},
+                "contacts": [{"profile": {"name": "State Tester"}, "wa_id": phone}],
+                "messages": [{
+                    "from": phone,
+                    "id": msg_id,
+                    "type": "text",
+                    "timestamp": timestamp,
+                    "text": {"body": text}
+                }]
+            }}]
+        }]
     }
 
 class MockExtractionResult:

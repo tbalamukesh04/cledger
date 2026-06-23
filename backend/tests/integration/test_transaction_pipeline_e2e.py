@@ -118,6 +118,9 @@ def test_full_transaction_lifecycle_e2e(mock_parse, mock_process, mock_cache, au
     job = WebhookJobPayload(
         job_id=str(uuid.uuid4()),
         tenant_id=1,
+        business_id="test_waba",
+        phone_number_id="test_phone",
+        message_id=raw_msg.message_id,
         raw_message_id=raw_msg.id,
         webhook_event_type="messages",
         message_timestamp=datetime.now(timezone.utc),
@@ -151,6 +154,9 @@ def test_full_transaction_lifecycle_e2e(mock_parse, mock_process, mock_cache, au
         job2 = WebhookJobPayload(
             job_id=str(uuid.uuid4()),
             tenant_id=1,
+            business_id="test_waba",
+            phone_number_id="test_phone",
+            message_id=raw_msg_refresh.message_id,
             raw_message_id=raw_msg_refresh.id,
             webhook_event_type="messages",
             message_timestamp=datetime.now(timezone.utc),

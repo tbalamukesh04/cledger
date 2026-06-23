@@ -13,6 +13,18 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_app_state(mock_redis):
     app.state.redis = mock_redis
+    from app.database.database import SessionLocal
+    from app.models.businesses import Businesses
+    db = SessionLocal()
+    tenant = db.query(Businesses).filter_by(id=1).first()
+    if not tenant:
+        tenant = Businesses(id=1, name="Global Test Tenant", slug="global-test", is_active=True, meta_waba_id="waba_ingestion", meta_phone_number_id="phone_ingestion")
+        db.add(tenant)
+    else:
+        tenant.meta_waba_id = "waba_ingestion"
+        tenant.meta_phone_number_id = "phone_ingestion"
+    db.commit()
+    db.close()
     yield
 
 WEBHOOK_URL = "/api/v1/webhook"
@@ -56,8 +68,10 @@ def create_mock_payload(msg_id, sender_phone, sender_name, group_id=None, text="
     return {
         "object": "whatsapp_business_account",
         "entry": [{
+            "id": "waba_ingestion",
             "changes": [{
                 "value": {
+                    "metadata": {"display_phone_number": "1234567890", "phone_number_id": "phone_ingestion"},
                     "messaging_product": "whatsapp",
                     "contacts": [{
                         "profile": {"name": sender_name},

@@ -34,6 +34,11 @@ def create_mock_gemini_response(json_string: str) -> dict:
 def create_test_job(msg: RawMessages) -> WebhookJobPayload:
     """Helper to create a valid job payload from a raw message."""
     return WebhookJobPayload(
+        job_id=f"job_{msg.id}",
+        tenant_id=1,
+        business_id="test_waba",
+        phone_number_id="test_phone",
+        message_id=msg.message_id,
         raw_message_id=msg.id,
         participant_id=msg.sender_id,
         group_id=msg.group_id,
@@ -41,6 +46,15 @@ def create_test_job(msg: RawMessages) -> WebhookJobPayload:
         ingestion_time=datetime.now(timezone.utc),
         webhook_event_type="text"
     )
+
+@pytest.fixture(autouse=True)
+def seed_test_tenant(db_session):
+    from app.models.businesses import Businesses
+    tenant = db_session.query(Businesses).filter_by(id=1).first()
+    if not tenant:
+        tenant = Businesses(id=1, name="Global Test Tenant", slug="global-test", is_active=True, meta_waba_id="test_waba", meta_phone_number_id="test_phone")
+        db_session.add(tenant)
+        db_session.commit()
 
 def setup_test_message(db_session: Session) -> RawMessages:
     """Helper to create a raw message that passes the scoring engine and reaches the LLM."""
@@ -60,6 +74,7 @@ def setup_test_message(db_session: Session) -> RawMessages:
     }
     
     msg = RawMessages(
+        tenant_id=1,
         message_id=f"wamid.TEST_{uuid.uuid4().hex[:8]}",
         group_id=group.id,
         sender_id=participant.id,

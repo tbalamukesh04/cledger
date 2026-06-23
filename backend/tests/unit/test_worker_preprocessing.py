@@ -20,7 +20,20 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_app_state(mock_redis):
     app.state.redis = mock_redis
+    from app.database.database import SessionLocal
+    from app.models.businesses import Businesses
+    db = SessionLocal()
+    tenant = db.query(Businesses).filter_by(id=1).first()
+    if not tenant:
+        tenant = Businesses(id=1, name="Global Test", slug="global", is_active=True, meta_waba_id="waba_preproc", meta_phone_number_id="phone_preproc")
+        db.add(tenant)
+    else:
+        tenant.meta_waba_id = "waba_preproc"
+        tenant.meta_phone_number_id = "phone_preproc"
+    db.commit()
+    db.close()
     yield
+
 from app.schemas.jobs import WebhookJobPayload
 from app.workers.job_handler import process_webhook_batch
 from app.config.logging_config import setup_logging
@@ -50,16 +63,20 @@ def test_worker_preprocessing(mock_redis):
     test_phone = f"26099900{run_id[-3:]}"
     payload = {
         "object": "whatsapp_business_account",
-        "entry": [{"changes": [{"value": {
-            "contacts": [{"profile": {"name": "Worker Preprocessing Tester"}, "wa_id": test_phone}],
-            "messages": [{
-                "from": test_phone,
-                "id": f"wamid.PREPROC_TEST_{run_id}",
-                "timestamp": str(int(time.time())),
-                "type": "text",
-                "text": {"body": "   Grocery Shopping\n\n500.00 ZMW\nignore this   "}
-            }]
-        }}]}]
+        "entry": [{
+            "id": "waba_preproc",
+            "changes": [{"value": {
+                "metadata": {"display_phone_number": "1234567890", "phone_number_id": "phone_preproc"},
+                "contacts": [{"profile": {"name": "Worker Preprocessing Tester"}, "wa_id": test_phone}],
+                "messages": [{
+                    "from": test_phone,
+                    "id": f"wamid.PREPROC_TEST_{run_id}",
+                    "timestamp": str(int(time.time())),
+                    "type": "text",
+                    "text": {"body": "   Grocery Shopping\n\n500.00 ZMW\nignore this   "}
+                }]
+            }}]
+        }]
     }
     
     payload_bytes = json.dumps(payload, separators=(',', ':')).encode('utf-8')

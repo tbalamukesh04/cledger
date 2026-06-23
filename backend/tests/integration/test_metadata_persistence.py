@@ -98,6 +98,10 @@ def test_metadata_persistence_workflow(MockAIParser, db_session, setup_test_data
     # 2. Setup Worker Jobs
     job_tx = WebhookJobPayload(
         job_id=f"job_{tx_msg_wamid}",
+        tenant_id=1,
+        business_id="test_waba",
+        phone_number_id="test_phone",
+        message_id=tx_msg_wamid,
         raw_message_id=msg_tx.id,
         participant_id=msg_tx.sender_id,
         group_id=msg_tx.group_id,
@@ -108,6 +112,10 @@ def test_metadata_persistence_workflow(MockAIParser, db_session, setup_test_data
     
     job_ntx = WebhookJobPayload(
         job_id=f"job_{ntx_msg_wamid}",
+        tenant_id=1,
+        business_id="test_waba",
+        phone_number_id="test_phone",
+        message_id=ntx_msg_wamid,
         raw_message_id=msg_ntx.id,
         participant_id=msg_ntx.sender_id,
         group_id=msg_ntx.group_id,

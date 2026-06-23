@@ -17,6 +17,7 @@ from app.models.participants import Participants
 from app.models.groups import Groups
 from app.models.transactions import Transactions, TransactionStatus
 from app.models.transaction_audit import TransactionAudit
+from app.models.businesses import Businesses
 from app.schemas.jobs import WebhookJobPayload
 from app.workers.job_handler import process_webhook_batch
 from app.database.redis_client import WEBHOOK_QUEUE_NAME
@@ -43,11 +44,20 @@ def test_webhook_ingestion_isolation(db_session, mock_redis):
     Validates ONLY the ingestion phase: webhook payload -> database RawMessages -> Redis Queue.
     Ensures the front door works independently of the worker pipeline.
     """
+    tenant = db_session.query(Businesses).filter_by(id=1).first()
+    if not tenant:
+        tenant = Businesses(id=1, name="Global Test", slug="glbl", is_active=True, meta_waba_id="1234567890", meta_phone_number_id="1234567890")
+        db_session.add(tenant)
+    else:
+        tenant.meta_waba_id = "1234567890"
+        tenant.meta_phone_number_id = "1234567890"
+    db_session.commit()
+
     # 1. Dependency Override: Inject our Test Database & Test Redis
     app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_redis] = lambda: mock_redis
-    
-    # 1b. Patch out RateLimiter and IPFilter to prevent background network calls using non-test IPs
+    app.state.redis = mock_redis
+
     client = TestClient(app)
 
     try:
@@ -110,6 +120,7 @@ def test_webhook_ingestion_isolation(db_session, mock_redis):
         # Always clean up overrides so we don't pollute the next tests
         app.dependency_overrides.clear()
 
+
 class MockExtractionResult:
     """A lightweight mock of the Pydantic extraction schema for deterministic pipeline testing."""
     def __init__(self, amount, confidence_score):
@@ -134,6 +145,7 @@ class MockExtractionResult:
             "confidence": self.confidence
         }
 
+
 @patch("app.workers.job_handler.get_cached_extractions_batch")
 @patch("app.workers.job_handler.process_extraction_batch")
 @patch("app.workers.job_handler.parse_batch_response")
@@ -142,9 +154,19 @@ def test_end_to_end_pipeline_flow(mock_parse, mock_process, mock_cache, db_sessi
     Validates the complete pipeline from webhook payload ingestion via API, queue insertion, 
     scoring, AI extraction, to database and audit persistence.
     """
+    tenant = db_session.query(Businesses).filter_by(id=1).first()
+    if not tenant:
+        tenant = Businesses(id=1, name="Global Test", slug="glbl", is_active=True, meta_waba_id="1234567890", meta_phone_number_id="1234567890")
+        db_session.add(tenant)
+    else:
+        tenant.meta_waba_id = "1234567890"
+        tenant.meta_phone_number_id = "1234567890"
+    db_session.commit()
+
     # 1. Dependency Override: Inject our Test Database & Test Redis
     app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_redis] = lambda: mock_redis
+    app.state.redis = mock_redis
     
     client = TestClient(app)
     
@@ -234,7 +256,7 @@ def test_end_to_end_pipeline_flow(mock_parse, mock_process, mock_cache, db_sessi
         assert msg_txn is not None, "Transaction raw message not persisted by webhook!"
         assert msg_chat is not None, "Chat raw message not persisted by webhook!"
 
-            # LIFECYCLE TRANSITION VALIDATION (Pre-Worker)
+        # LIFECYCLE TRANSITION VALIDATION (Pre-Worker)
         assert msg_txn.processed is False, "Lifecycle Error: Message should be un-processed before worker execution."
         assert db_session.query(Transactions).filter(Transactions.raw_message_id == msg_txn.id).count() == 0, "Lifecycle Error: Transaction should not exist yet."
 
@@ -244,7 +266,7 @@ def test_end_to_end_pipeline_flow(mock_parse, mock_process, mock_cache, db_sessi
         # Execute the worker block synchronously
         results = process_webhook_batch(batch_jobs)
 
-       # --- STAGE 4: STATE VALIDATION ---
+        # --- STAGE 4: STATE VALIDATION ---
 
         # 1. Validate Non-Transaction (Scoring engine bypasses AI)
         updated_chat = db_session.query(RawMessages).filter(RawMessages.message_id == chat_msg_id).first()
@@ -272,7 +294,7 @@ def test_end_to_end_pipeline_flow(mock_parse, mock_process, mock_cache, db_sessi
         assert str(audit_record.action).lower().endswith("created")
         assert audit_record.old_value is None, f"Expected old_value to be None for creation, got {audit_record.old_value}"
         assert float(audit_record.new_value["amount"]) == 500.0
-        assert audit_record.actor_identifier == "system"
+        assert audit_record.actor_identifier == "worker-node-alpha"
 
         # --- STAGE 5: FAILURE VISIBILITY & SYSTEM HEALTH CHECKS ---
         

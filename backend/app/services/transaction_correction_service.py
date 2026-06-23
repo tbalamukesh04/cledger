@@ -10,10 +10,10 @@ logger = logging.getLogger(__name__)
 
 ALLOWED_CORRECTION_FIELDS = {"amount", "currency", "remarks", "txn_date", "txn_type"}
 
-def correct_transaction_service(db:Session, transaction_id: int, correction_data:Dict[str, Any], actor_identifier: str) -> Optional[Transactions]:
-    db_txn = db.query(Transactions).filter(Transactions.id == transaction_id).first()
+def correct_transaction_service(db:Session, transaction_id: int, tenant_id: int, correction_data:Dict[str, Any], actor_identifier: str) -> Optional[Transactions]:
+    db_txn = db.query(Transactions).filter(Transactions.id == transaction_id, Transactions.tenant_id == tenant_id).first()
     if not db_txn:
-        logger.warning(f"Correction failed: Transaction {transaction_id} not found.")
+        logger.warning(f"Correction failed: Transaction {transaction_id} not found or tenant mismatch for tenant {tenant_id}.")
         return None
 
     filtered_data = {
@@ -29,6 +29,7 @@ def correct_transaction_service(db:Session, transaction_id: int, correction_data
     updated_txn = update_transaction(
         db=db,
         transaction_id=transaction_id, 
+        tenant_id=tenant_id,
         update_data=filtered_data, 
         commit=False, 
         actor_identifier=actor_identifier, 
@@ -47,12 +48,13 @@ def correct_transaction_service(db:Session, transaction_id: int, correction_data
 def invalidate_transaction_service(
     db:Session, 
     transaction_id: int,
+    tenant_id: int,
     reason: Optional[str],
     actor_identifier: str
 ) -> Optional[Transactions]:
-    db_txn = db.query(Transactions).filter(Transactions.id == transaction_id).first()
+    db_txn = db.query(Transactions).filter(Transactions.id == transaction_id, Transactions.tenant_id == tenant_id).first()
     if not db_txn:
-        logger.warning(f"Invalidation failed: Transaction {transaction_id} not found.")
+        logger.warning(f"Invalidation failed: Transaction {transaction_id} not found or tenant mismatch for tenant {tenant_id}.")
         return None
     
     update_data = {
@@ -67,12 +69,12 @@ def invalidate_transaction_service(
     updated_txn = update_transaction(
         db=db,
         transaction_id=transaction_id,
+        tenant_id=tenant_id,
         update_data=update_data,
         commit=False,
         actor_identifier=actor_identifier,
         action=TransactionAuditAction.INVALIDATED
     )
-
     logger.info({
         "event_type": "transaction_invalidated",
         "transaction_id": transaction_id,

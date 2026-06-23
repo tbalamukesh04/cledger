@@ -27,6 +27,9 @@ class AuditLog(Base):
     event_type: Mapped[str] = mapped_column(Enum(EventType, name="audit_event_type_enum"), nullable=False, index=True)
     actor_type: Mapped[str] = mapped_column(Enum(ActorType, name= "audit_actor_type_enum"), nullable=False)
     actor_identifier: Mapped[str] = mapped_column(String(255), nullable=True, index=True)
+    tenant_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    business_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    actor_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
 
     old_state: Mapped[dict[str, Any]|None] = mapped_column(JSONB, nullable = True)
     new_state: Mapped[dict[str, Any]|None] = mapped_column(JSONB, nullable = True)

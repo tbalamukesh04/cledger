@@ -4,6 +4,11 @@ from app.schemas.jobs import WebhookJobPayload
 
 def test_payload_serialization():
     job = WebhookJobPayload(
+        job_id="test_job_1",
+        tenant_id=1,
+        business_id="test_waba",
+        phone_number_id="test_phone",
+        message_id="wamid.105",
         raw_message_id=105,
         participant_id=42,
         group_id=7,
